@@ -1,5 +1,4 @@
 #include "lahaina-qrd-common.dtsi"
-#include "camera/lahaina-camera-sensor-nicole.dtsi"
 
 &bluetooth {
 	pinctrl-1 = <&wcnss_en_sleep>;

@@ -1,6 +1,6 @@
 /dts-v1/;
 
-#include "lahainap-v2.1.dtsi"
+#include "lahainap-hhg-hsp-pro.dtsi"
 #include "lahainap-nicole.dtsi"
 
 / {
