@@ -1139,6 +1139,7 @@ static void goodix_ts_report_pen(struct input_dev *dev,
 static void goodix_ts_report_finger(struct input_dev *dev,
 		struct goodix_touch_data *touch_data)
 {
+	struct goodix_ts_core *core_data = dev_get_drvdata(&dev->dev);
 	unsigned int touch_num = touch_data->touch_num;
 	int i;
 
@@ -1153,8 +1154,10 @@ static void goodix_ts_report_finger(struct input_dev *dev,
 			input_mt_slot(dev, i);
 			input_mt_report_slot_state(dev, MT_TOOL_FINGER, true);
 			input_report_abs(dev, ABS_MT_POSITION_X,
+					core_data->board_data.panel_max_x -
 					touch_data->coords[i].x);
 			input_report_abs(dev, ABS_MT_POSITION_Y,
+					core_data->board_data.panel_max_y -
 					touch_data->coords[i].y);
 			input_report_abs(dev, ABS_MT_TOUCH_MAJOR,
 					touch_data->coords[i].w);
