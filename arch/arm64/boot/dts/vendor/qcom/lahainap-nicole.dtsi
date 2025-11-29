@@ -62,6 +62,18 @@
 	qcom,msm-mi2s-lines = <0x2>;
 };
 
+&q6core {
+	cdc_pri_mi2s_gpios: msm_cdc_pinctrl_pri {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&pri_mi2s_sck_active &pri_mi2s_ws_active
+				&pri_mi2s_sd0_active &pri_mi2s_sd1_active>;
+		pinctrl-1 = <&pri_mi2s_sck_sleep &pri_mi2s_ws_sleep
+				&pri_mi2s_sd0_sleep &pri_mi2s_sd1_sleep>;
+		#gpio-cells = <0>;
+	};
+};
+
 &lahaina_snd {
 	qcom,model = "lahaina-hhg-snd-card";
 
@@ -129,21 +141,23 @@
 
 	focaltech@0 {
 		compatible = "focaltech,fts";
-		focaltech,display-coords = <0 0 1080 2400>;
-		focaltech,irq-gpio = <&tlmm 23 0x2008>;
-		focaltech,max-touch-number = <10>;
-		focaltech,reset-gpio = <&tlmm 22 0x00>;
+		reg = <0x0>;
+		spi-max-frequency = <6000000>;
 		interrupt-parent = <&tlmm>;
 		interrupts = <23 0x2008>;
-		panel = <&dsi_vtdr6130_amoled_cmd>;
+		focaltech,reset-gpio = <&tlmm 22 0x00>;
+		focaltech,irq-gpio = <&tlmm 23 0x2008>;
+		focaltech,max-touch-number = <10>;
+		focaltech,display-coords = <0 0 1080 2400>;
+		focaltech,avdd-name = "vdd";
+		focaltech,iovdd-name = "vcc_i2c";
+		vdd-supply = <&L3C>;
+		vcc_i2c-supply = <&L8C>;
+		pinctrl-names = "pmx_ts_active", "pmx_ts_suspend", "pmx_ts_release";
 		pinctrl-0 = <&ts_active>;
 		pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
 		pinctrl-2 = <&ts_release>;
-		pinctrl-names = "pmx_ts_active", "pmx_ts_suspend", "pmx_ts_release";
-		reg = <0x0>;
-		spi-max-frequency = <6000000>;
-		vcc_i2c-supply = <&L8C>;
-		vdd-supply = <&L3C>;
+		panel = <&dsi_vtdr6130_amoled_cmd>;
 	};
 };
 
@@ -159,10 +173,6 @@
 &pm8008j_l7 {
 	regulator-min-microvolt = <3200000>;
 	regulator-max-microvolt = <3300000>;
-};
-
-&qupv3_se15_i2c {
-	qcom,clk-freq-out = <100000>;
 };
 
 &qupv3_se17_i2c {
@@ -281,7 +291,7 @@
 };
 
 &tlmm {
-	CONN_ID_0_active {
+	CONN_ID_0: CONN_ID_0_active {
 		mux {
 			pins = "gpio3", "gpio6", "gpio7", "gpio45", "gpio50", "gpio51";
 			function = "gpio";
@@ -308,7 +318,7 @@
 		};
 	};
 
-	gpio_nc_pin {
+	gpio_nc: gpio_nc_pin {
 		mux {
 			pins = "gpio12", "gpio26", "gpio33";
 			function = "gpio";
@@ -323,7 +333,7 @@
 	};
 
 	pmx_vib_active {
-		vib_active {
+		vib_active: vib_active {
 			mux {
 				pins = "gpio106", "gpio44";
 				function = "gpio";
@@ -338,7 +348,7 @@
 	};
 
 	pmx_vib_int_suspend {
-		vib_int_suspend {
+		vib_int_suspend: vib_int_suspend {
 			mux {
 				pins = "gpio44";
 				function = "gpio";
@@ -353,7 +363,7 @@
 	};
 
 	pmx_vib_release {
-		vib_release {
+		vib_release: vib_release {
 			mux {
 				pins = "gpio106", "gpio44";
 				function = "gpio";
@@ -368,7 +378,7 @@
 	};
 
 	pmx_vib_reset_suspend {
-		vib_reset_suspend {
+		vib_reset_suspend: vib_reset_suspend {
 			mux {
 				pins = "gpio106";
 				function = "gpio";
@@ -383,7 +393,7 @@
 	};
 
 	pmx_vibhi_release {
-		vibhi_release {
+		vibhi_release: vibhi_release {
 			mux {
 				pins = "gpio16", "gpio17";
 				function = "gpio";
@@ -396,7 +406,7 @@
 		};
 	};
 
-	sim_gpio_pin {
+	sim_gpio: sim_gpio_pin {
 		mux {
 			pins = "gpio86";
 			function = "gpio";
@@ -410,7 +420,7 @@
 		};
 	};
 
-	usb_ocp_pin {
+	usb_ocp: usb_ocp_pin {
 		mux {
 			pins = "gpio79";
 			function = "gpio";
