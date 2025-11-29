@@ -449,4 +449,3 @@ int fts_bus_exit(struct fts_ts_data *ts_data)
     FTS_FUNC_EXIT();
     return 0;
 }
-

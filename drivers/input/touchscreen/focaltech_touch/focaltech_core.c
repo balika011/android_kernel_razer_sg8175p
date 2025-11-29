@@ -77,8 +77,6 @@ struct fts_ts_data *fts_data;
 static int fts_ts_suspend(struct device *dev);
 static int fts_ts_resume(struct device *dev);
 
-unsigned int focaltch_exist = 1;
-
 int fts_check_cid(struct fts_ts_data *ts_data, u8 id_h)
 {
     int i = 0;
@@ -1605,15 +1603,13 @@ static int drm_check_dt(struct device_node *np)
         panel = of_drm_find_panel(node);
         of_node_put(node);
         if (!IS_ERR(panel)) {
-            FTS_INFO("find drm_panel successfully");
+            FTS_INFO("found drm_panel successfully");
             active_panel = panel;
             return 0;
         }
     }
 
-	FTS_ERROR("#######################################no find drm_panel");
-	/* return -ENODEV;*/
-	return PTR_ERR(panel);  // added by thundersoft 
+    return PTR_ERR(panel);
 }
 
 static int drm_notifier_callback(struct notifier_block *self,
@@ -1742,18 +1738,7 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
         ret = fts_parse_dt(ts_data->dev, ts_data->pdata);
         if (ret)
             FTS_ERROR("device-tree parse fail");
-#if 0
-#if defined(CONFIG_DRM)
-#if defined(CONFIG_DRM_PANEL)
-        ret = drm_check_dt(ts_data->dev->of_node);
-        if (ret) {
-            FTS_ERROR("parse drm-panel fail");
-        }
-#endif
-#endif
-#endif
-    }
-   else {
+    } else {
         if (ts_data->dev->platform_data) {
             memcpy(ts_data->pdata, ts_data->dev->platform_data, pdata_size);
         } else {
@@ -1811,49 +1796,41 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
 
     ret = fts_get_ic_information(ts_data);
     if (ret) {
-		focaltch_exist = 0;
-        FTS_ERROR("not focal IC, unregister driver, focaltech exist = %d\n", focaltch_exist);
+        FTS_ERROR("not focal IC, unregister driver\n");
         goto err_irq_req;
     }
 
-
-// start  of thundersoft
 #if defined(CONFIG_DRM)
 #if defined(CONFIG_DRM_PANEL)
-        ret = drm_check_dt(ts_data->dev->of_node);
-	 if (ret == -EPROBE_DEFER){
-
+    ret = drm_check_dt(ts_data->dev->of_node);
+    if (ret == -EPROBE_DEFER) {
 #if FTS_POWER_SOURCE_CUST_EN
-    fts_power_source_exit(ts_data);
+        fts_power_source_exit(ts_data);
 #endif
 
-    if (gpio_is_valid(ts_data->pdata->reset_gpio))
-        gpio_free(ts_data->pdata->reset_gpio);
-    if (gpio_is_valid(ts_data->pdata->irq_gpio))
-        gpio_free(ts_data->pdata->irq_gpio);
+        if (gpio_is_valid(ts_data->pdata->reset_gpio))
+            gpio_free(ts_data->pdata->reset_gpio);
+        if (gpio_is_valid(ts_data->pdata->irq_gpio))
+            gpio_free(ts_data->pdata->irq_gpio);
 
-    kfree_safe(ts_data->touch_buf);
-	
-    input_unregister_device(ts_data->input_dev);
+        kfree_safe(ts_data->touch_buf);
+
+        input_unregister_device(ts_data->input_dev);
 #if FTS_PEN_EN
-    input_unregister_device(ts_data->pen_dev);
+        input_unregister_device(ts_data->pen_dev);
 #endif
 
-    if (ts_data->ts_workqueue)
-        destroy_workqueue(ts_data->ts_workqueue);
-	
-    kfree_safe(ts_data->bus_tx_buf);
-    kfree_safe(ts_data->bus_rx_buf);
-    kfree_safe(ts_data->pdata);	
-	
-     FTS_ERROR("#########################################parse drm-panel fail");
-     return ret;	
-	 }
-	 
-#endif
-#endif
-// end of thundersoft
+        if (ts_data->ts_workqueue)
+            destroy_workqueue(ts_data->ts_workqueue);
 
+        kfree_safe(ts_data->bus_tx_buf);
+        kfree_safe(ts_data->bus_rx_buf);
+        kfree_safe(ts_data->pdata);
+
+        return ret;
+    }
+#endif
+#endif
 
     ret = fts_create_apk_debug_channel(ts_data);
     if (ret) {
