@@ -674,7 +674,7 @@ static int dsi_display_read_status(struct dsi_display_ctrl *ctrl,
 	lenp = config->status_valid_params ?: config->status_cmds_rlen;
 	count = config->status_cmd.count;
 	cmds = config->status_cmd.cmds;
-	flags |= (DSI_CTRL_CMD_FETCH_MEMORY | DSI_CTRL_CMD_READ);
+	flags |= DSI_CTRL_CMD_FETCH_MEMORY;
 
 	if (ctrl->ctrl->host_config.panel_mode == DSI_OP_VIDEO_MODE)
 		flags |= DSI_CTRL_CMD_CUSTOM_DMA_SCHED;
@@ -691,12 +691,24 @@ static int dsi_display_read_status(struct dsi_display_ctrl *ctrl,
 
 		if (config->status_cmd.state == DSI_CMD_SET_STATE_LP)
 			cmds[i].msg.flags |= MIPI_DSI_MSG_USE_LPM;
-		cmds[i].msg.rx_buf = config->status_buf;
-		cmds[i].msg.rx_len = config->status_cmds_rlen[i];
-		rc = dsi_ctrl_cmd_transfer(ctrl->ctrl, &cmds[i].msg, &flags);
-		if (rc <= 0) {
-			DSI_ERR("rx cmd transfer failed rc=%d\n", rc);
-			return rc;
+
+		if (config->status_cmds_rlen[i] > 0) {
+			u32 read_flags = flags | DSI_CTRL_CMD_READ;
+			cmds[i].msg.rx_buf = config->status_buf;
+			cmds[i].msg.rx_len = config->status_cmds_rlen[i];
+			rc = dsi_ctrl_cmd_transfer(ctrl->ctrl, &cmds[i].msg,
+						   &read_flags);
+			if (rc <= 0) {
+				DSI_ERR("rx cmd transfer failed rc=%d\n", rc);
+				return rc;
+			}
+		} else {
+			rc = dsi_ctrl_cmd_transfer(ctrl->ctrl, &cmds[i].msg,
+						   &flags);
+			if (rc) {
+				DSI_ERR("tx cmd transfer failed rc=%d\n", rc);
+				return rc;
+			}
 		}
 
 		memcpy(config->return_buf + start,
