@@ -180,7 +180,10 @@
 };
 
 &qupv3_se15_i2c {
-	status = "disabled";
+	qcom,clk-freq-out = <100000>;
+	nq@28 {
+		status = "disabled";
+	};
 };
 
 &pm8008j_l1 {
