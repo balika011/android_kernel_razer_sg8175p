@@ -19,7 +19,6 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
-#include <linux/hqsysfs.h>
 #if defined(CONFIG_DRM)
 #include <drm/drm_panel.h>
 #endif
