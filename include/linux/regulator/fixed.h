@@ -38,6 +38,7 @@ struct fixed_voltage_config {
 	unsigned startup_delay;
 	unsigned enabled_at_boot:1;
 	struct regulator_init_data *init_data;
+	int ocp_irq;
 };
 
 struct regulator_consumer_supply;

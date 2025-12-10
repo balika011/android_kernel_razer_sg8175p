@@ -30,6 +30,8 @@
 #endif
 #include <linux/regulator/machine.h>
 #include <linux/clk.h>
+#include <linux/of_irq.h>
+#include <linux/irq.h>
 
 
 struct fixed_voltage_data {
@@ -130,6 +132,8 @@ of_get_fixed_voltage_config(struct device *dev,
 	if (of_find_property(np, "vin-supply", NULL))
 		config->input_supply = "vin";
 
+	config->ocp_irq = of_irq_get_byname(np, "ocp");
+
 	return config;
 }
 
@@ -158,6 +162,17 @@ static void qti_reg_fixed_voltage_init(struct device *dev,
 				       struct regulator_dev *rdev)
 { }
 #endif
+
+static irqreturn_t reg_fixed_ocp_irq(int irq, void *_rdev)
+{
+	struct regulator_dev *rdev = _rdev;
+
+	regulator_lock(rdev);
+	regulator_notifier_call_chain(rdev, REGULATOR_EVENT_OVER_CURRENT, NULL);
+	regulator_unlock(rdev);
+
+	return IRQ_HANDLED;
+}
 
 static int reg_fixed_voltage_probe(struct platform_device *pdev)
 {
@@ -267,6 +282,18 @@ static int reg_fixed_voltage_probe(struct platform_device *pdev)
 		ret = PTR_ERR(drvdata->dev);
 		dev_err(&pdev->dev, "Failed to register regulator: %d\n", ret);
 		return ret;
+	}
+
+	if (config->ocp_irq >= 0) {
+		ret = devm_request_threaded_irq(&pdev->dev, config->ocp_irq,
+						NULL, reg_fixed_ocp_irq,
+						IRQF_TRIGGER_LOW | IRQF_ONESHOT,
+						"ocp", drvdata->dev);
+		if (ret < 0) {
+			dev_err(&pdev->dev, "Failed to request ocp irq: %d\n",
+				ret);
+			return ret;
+		}
 	}
 
 	platform_set_drvdata(pdev, drvdata);
