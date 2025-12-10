@@ -23,8 +23,6 @@
 #include "qti_typec_class.h"
 
 #ifdef CONFIG_MACH_RAZER_NICOLE
-#include <linux/gpio.h>
-#define OTG_GPIO_NUMBER			356
 #define CHARGE_CURRENT			9
 #endif
 
@@ -798,14 +796,6 @@ static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 	case BC_WLS_STATUS_GET:
 		pst = &bcdev->psy_list[PSY_TYPE_WLS];
 		break;
-#ifdef CONFIG_MACH_RAZER_NICOLE
-	case USB_POWER_SUPPLY_SET_SINK:
-		gpio_direction_output(OTG_GPIO_NUMBER, 0);
-		break;
-	case USB_POWER_SUPPLY_SET_SOURCE:
-		gpio_direction_output(OTG_GPIO_NUMBER, 1);
-		break;
-#endif
 	default:
 		break;
 	}
