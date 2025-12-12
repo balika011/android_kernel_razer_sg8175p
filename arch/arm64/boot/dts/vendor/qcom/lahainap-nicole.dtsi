@@ -421,6 +421,36 @@
 			drive-strength = <16>;
 		};
 	};
+
+	thundersoft_straps {
+		sku_straps: sku_straps {
+			mux {
+				pins = "gpio3", "gpio6", "gpio7";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio3", "gpio6", "gpio7";
+				drive-strength = <2>;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+
+		board_rev_straps: board_rev_straps {
+			mux {
+				pins = "gpio45", "gpio50", "gpio51";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio45", "gpio50", "gpio51";
+				drive-strength = <2>;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+	};
 };
 
 &soc {
@@ -474,6 +504,20 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&usb0_vbus_boost_default>;
 	};
+
+	thundersoft_straps {
+		compatible = "thundersoft,straps";
+		sku-gpios = <&tlmm 3 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>,
+			<&tlmm 6 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>,
+			<&tlmm 7 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>;
+		board_rev-gpios = <&tlmm 45 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>,
+			<&tlmm 50 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>,
+			<&tlmm 51 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&sku_straps &board_rev_straps>;
+		status = "ok";
+	};
+
 };
 
 &sde_dsi {
