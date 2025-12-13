@@ -1764,18 +1764,6 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
         goto err_bus_init;
     }
 
-    ret = fts_input_init(ts_data);
-    if (ret) {
-        FTS_ERROR("input initialize fail");
-        goto err_input_init;
-    }
-
-    ret = fts_buffer_init(ts_data);
-    if (ret) {
-        FTS_ERROR("buffer init fail");
-        goto err_buffer_init;
-    }
-
     ret = fts_gpio_configure(ts_data);
     if (ret) {
         FTS_ERROR("configure the gpios fail");
@@ -1797,7 +1785,19 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
     ret = fts_get_ic_information(ts_data);
     if (ret) {
         FTS_ERROR("not focal IC, unregister driver\n");
-        goto err_irq_req;
+        goto err_ic_info;
+    }
+
+    ret = fts_input_init(ts_data);
+    if (ret) {
+        FTS_ERROR("input initialize fail");
+        goto err_input_init;
+    }
+
+    ret = fts_buffer_init(ts_data);
+    if (ret) {
+        FTS_ERROR("buffer init fail");
+        goto err_buffer_init;
     }
 
 #if defined(CONFIG_DRM)
@@ -1920,6 +1920,14 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
     return 0;
 
 err_irq_req:
+    kfree_safe(ts_data->touch_buf);
+err_buffer_init:
+    input_unregister_device(ts_data->input_dev);
+#if FTS_PEN_EN
+    input_unregister_device(ts_data->pen_dev);
+#endif
+err_input_init:
+err_ic_info:
 #if FTS_POWER_SOURCE_CUST_EN
 err_power_init:
     fts_power_source_exit(ts_data);
@@ -1929,19 +1937,12 @@ err_power_init:
     if (gpio_is_valid(ts_data->pdata->irq_gpio))
         gpio_free(ts_data->pdata->irq_gpio);
 err_gpio_config:
-    kfree_safe(ts_data->touch_buf);
-err_buffer_init:
-    input_unregister_device(ts_data->input_dev);
-#if FTS_PEN_EN
-    input_unregister_device(ts_data->pen_dev);
-#endif
-err_input_init:
-    if (ts_data->ts_workqueue)
-        destroy_workqueue(ts_data->ts_workqueue);
 err_bus_init:
     kfree_safe(ts_data->bus_tx_buf);
     kfree_safe(ts_data->bus_rx_buf);
     kfree_safe(ts_data->pdata);
+    if (ts_data->ts_workqueue)
+	    destroy_workqueue(ts_data->ts_workqueue);
 
     FTS_FUNC_EXIT();
     return ret;
