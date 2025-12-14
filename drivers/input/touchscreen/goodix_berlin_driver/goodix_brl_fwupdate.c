@@ -16,9 +16,6 @@
  */
 #include "goodix_ts_core.h"
 
-#define BUS_TYPE_SPI					1
-#define BUS_TYPE_I2C					0
-
 #define GOODIX_BUS_RETRY_TIMES			3
 
 #define FW_HEADER_SIZE_BRA				256
@@ -40,7 +37,8 @@
 #define ISP_RAM_ADDR_BRA				0x18400
 #define ISP_RAM_ADDR_BRB				0x57000
 #define ISP_RAM_ADDR_BRD				0x23800
-#define HW_REG_CPU_RUN_FROM				0x10000
+#define BOOTOPTION_ADDR					0x10000
+#define BOOTOPTION_ISP					0x55
 #define FLASH_CMD_REG_BRA				0x10400
 #define FLASH_CMD_REG_BRB				0x13400
 #define FLASH_CMD_REG_BRD				0x12400
@@ -77,10 +75,6 @@
 #define FLASH_CMD_W_STATUS_ADDR_ERR		0x44
 #define FLASH_CMD_W_STATUS_WRITE_ERR	0x55
 #define FLASH_CMD_W_STATUS_WRITE_OK		0xEE
-
-#define CHIP_TYPE_BRA					0x96
-#define CHIP_TYPE_BRB					0x97
-#define CHIP_TYPE_BRD					0x98
 
 
 struct update_info_t {
@@ -168,7 +162,7 @@ struct fw_subsys_info {
  * @subsys: sybsystem info
  */
 #pragma pack(1)
-struct  firmware_summary {
+struct firmware_summary {
 	u32 size;
 	u32 checksum;
 	u8 hw_pid[6];
@@ -180,7 +174,6 @@ struct  firmware_summary {
 	u8 protocol_ver;
 	u8 bus_type;
 	u8 flash_protect;
-	// u8 reserved[8];
 	struct fw_subsys_info subsys[FW_SUBSYS_MAX_NUM];
 };
 #pragma pack()
@@ -212,7 +205,6 @@ struct goodix_flash_cmd {
 			u8 fw_type;
 			u16 fw_len;
 			u32 fw_addr;
-			//u16 checksum;
 		};
 		u8 buf[16];
 	};
@@ -251,7 +243,6 @@ enum compare_status {
  */
 struct fw_update_ctrl {
 	struct mutex mutex;
-	int initialized;
 	char fw_name[GOODIX_MAX_STR_LABLE_LEN];
 	int mode;
 	enum update_status status;
@@ -265,32 +256,27 @@ struct fw_update_ctrl {
 	struct bin_attribute attr_fwimage;
 	struct kobject *kobj;
 };
-static struct fw_update_ctrl goodix_fw_update_ctrl;
+static struct fw_update_ctrl *goodix_fw_update_ctrl;
 
-static int goodix_fw_update_reset(int delay)
+static int goodix_fw_update_reset(void)
 {
-	struct goodix_ts_hw_ops *hw_ops;
+	struct goodix_ts_hw_ops *hw_ops = goodix_fw_update_ctrl->core_data->hw_ops;
+	int ret;
 
-	hw_ops = goodix_fw_update_ctrl.core_data->hw_ops;
-	return hw_ops->reset(goodix_fw_update_ctrl.core_data, delay);
-}
+	ret = hw_ops->power(goodix_fw_update_ctrl->core_data, false);
+	if (ret < 0)
+		return ret;
 
-static int get_fw_version_info(struct goodix_fw_version *fw_version)
-{
-	struct goodix_ts_hw_ops *hw_ops =
-		goodix_fw_update_ctrl.core_data->hw_ops;
-
-	return hw_ops->read_version(goodix_fw_update_ctrl.core_data,
-				fw_version);
+	return hw_ops->power(goodix_fw_update_ctrl->core_data, true);
 }
 
 static int goodix_reg_write(unsigned int addr,
 			unsigned char *data, unsigned int len)
 {
 	struct goodix_ts_hw_ops *hw_ops =
-			goodix_fw_update_ctrl.core_data->hw_ops;
+			goodix_fw_update_ctrl->core_data->hw_ops;
 
-	return hw_ops->write(goodix_fw_update_ctrl.core_data,
+	return hw_ops->write(goodix_fw_update_ctrl->core_data,
 			addr, data, len);
 }
 
@@ -298,9 +284,9 @@ static int goodix_reg_read(unsigned int addr,
 			unsigned char *data, unsigned int len)
 {
 	struct goodix_ts_hw_ops *hw_ops =
-			goodix_fw_update_ctrl.core_data->hw_ops;
+			goodix_fw_update_ctrl->core_data->hw_ops;
 
-	return hw_ops->read(goodix_fw_update_ctrl.core_data,
+	return hw_ops->read(goodix_fw_update_ctrl->core_data,
 			addr, data, len);
 }
 
@@ -321,17 +307,17 @@ static int goodix_parse_firmware(struct firmware_data *fw_data)
 	unsigned int i, fw_offset, info_offset;
 	u32 checksum;
 	int ic_type =
-		goodix_fw_update_ctrl.core_data->bus->ic_type;
+		goodix_fw_update_ctrl->core_data->bus->ic_type;
 	int subsys_info_offset =
-		goodix_fw_update_ctrl.update_info->subsys_info_offset;
+		goodix_fw_update_ctrl->update_info->subsys_info_offset;
 	int header_size =
-		goodix_fw_update_ctrl.update_info->header_size;
+		goodix_fw_update_ctrl->update_info->header_size;
 	int r = 0;
 
 	fw_summary = &fw_data->fw_summary;
 
 	/* copy firmware head info */
-	if (goodix_fw_update_ctrl.mode & UPDATE_MODE_SRC_SYSFS)
+	if (goodix_fw_update_ctrl->mode & UPDATE_MODE_SRC_SYSFS)
 		firmware = fw_data->fw_sysfs;
 	else
 		firmware = fw_data->firmware;
@@ -397,8 +383,11 @@ static int goodix_parse_firmware(struct firmware_data *fw_data)
 	ts_info("Firmware PID:GT%s", fw_summary->fw_pid);
 	ts_info("Firmware VID:%*ph", 4, fw_summary->fw_vid);
 	ts_info("Firmware chip type:0x%02X", fw_summary->chip_type);
-	ts_info("Firmware bus type:%s",
-		(fw_summary->bus_type & BUS_TYPE_SPI) ? "SPI" : "I2C");
+	switch (fw_summary->bus_type) {
+	case GOODIX_BUS_TYPE_I2C: ts_info("Firmware bus type: I2C"); break;
+	case GOODIX_BUS_TYPE_SPI: ts_info("Firmware bus type: SPI"); break;
+	case GOODIX_BUS_TYPE_I3C: ts_info("Firmware bus type: I3C"); break;
+	}
 	ts_info("Firmware size:%u", fw_summary->size);
 	ts_info("Firmware subsystem num:%u", fw_summary->subsys_num);
 
@@ -412,16 +401,7 @@ static int goodix_parse_firmware(struct firmware_data *fw_data)
 		ts_debug("Subsystem Ptr:%p", fw_summary->subsys[i].data);
 	}
 
-	if (fw_summary->chip_type == CHIP_TYPE_BRA &&
-		ic_type != IC_TYPE_BERLIN_A) {
-		ts_err("ic type mismatch!");
-		r = -EINVAL;
-	} else if (fw_summary->chip_type == CHIP_TYPE_BRB &&
-		ic_type != IC_TYPE_BERLIN_B) {
-		ts_err("ic type mismatch!");
-		r = -EINVAL;
-	} else if (fw_summary->chip_type == CHIP_TYPE_BRD &&
-		ic_type != IC_TYPE_BERLIN_D) {
+	if (fw_summary->chip_type != ic_type) {
 		ts_err("ic type mismatch!");
 		r = -EINVAL;
 	}
@@ -442,12 +422,13 @@ static int goodix_fw_version_compare(struct fw_update_ctrl *fwu_ctrl)
 	int ret = 0;
 	struct goodix_fw_version fw_version;
 	struct firmware_summary *fw_summary = &fwu_ctrl->fw_data.fw_summary;
-	u32 config_id_reg = goodix_fw_update_ctrl.update_info->config_id_reg;
+	u32 config_id_reg = goodix_fw_update_ctrl->update_info->config_id_reg;
 	u32 file_cfg_id;
 	u32 ic_cfg_id;
 
 	/* compare fw_version */
-	ret = get_fw_version_info(&fw_version);
+	ret = goodix_fw_update_ctrl->core_data->hw_ops->read_version(
+		goodix_fw_update_ctrl->core_data, &fw_version);
 	if (ret)
 		return -EINVAL;
 
@@ -548,13 +529,13 @@ exit:
  */
 static int goodix_load_isp(struct firmware_data *fw_data)
 {
-	struct goodix_fw_version isp_fw_version;
+	struct goodix_fw_version fw_version;
 	struct fw_subsys_info *fw_isp;
-	u32 isp_ram_reg = goodix_fw_update_ctrl.update_info->isp_ram_reg;
+	u32 isp_ram_reg = goodix_fw_update_ctrl->update_info->isp_ram_reg;
 	u8 reg_val[8] = {0x00};
 	int r;
 
-	memset(&isp_fw_version, 0, sizeof(isp_fw_version));
+	memset(&fw_version, 0, sizeof(fw_version));
 	fw_isp = &fw_data->fw_summary.subsys[0];
 
 	ts_info("Loading ISP start");
@@ -567,26 +548,27 @@ static int goodix_load_isp(struct firmware_data *fw_data)
 
 	ts_info("Success send ISP data");
 
-	/* SET BOOT OPTION TO 0X55 */
-	memset(reg_val, 0x55, 8);
-	r = goodix_reg_write_confirm(HW_REG_CPU_RUN_FROM, reg_val, 8);
+	/* SET BOOT OPTION TO 0x55 */
+	memset(reg_val, BOOTOPTION_ISP, 8);
+	r = goodix_reg_write_confirm(BOOTOPTION_ADDR, reg_val, 8);
 	if (r < 0) {
 		ts_err("Failed set REG_CPU_RUN_FROM flag");
 		return r;
 	}
-	ts_info("Success write [8]0x55 to 0x%x", HW_REG_CPU_RUN_FROM);
+	ts_info("Success write [8]0x55 to 0x%x", BOOTOPTION_ADDR);
 
-	if (goodix_fw_update_reset(100))
+	if (goodix_fw_update_reset())
 		ts_err("reset abnormal");
+
 	/*check isp state */
-	if (get_fw_version_info(&isp_fw_version)) {
+	if (goodix_fw_update_ctrl->core_data->hw_ops->read_version(
+		    goodix_fw_update_ctrl->core_data, &fw_version)) {
 		ts_err("failed read isp version");
 		return -2;
 	}
-	if (memcmp(&isp_fw_version.patch_pid[3], "ISP", 3)) {
-		ts_err("patch id error %c%c%c != %s",
-		isp_fw_version.patch_pid[3], isp_fw_version.patch_pid[4],
-		isp_fw_version.patch_pid[5], "ISP");
+	if (memcmp(&fw_version.patch_pid[3], "ISP", 3)) {
+		ts_err("patch id error %c%c%c != %s", fw_version.patch_pid[3],
+		       fw_version.patch_pid[4], fw_version.patch_pid[5], "ISP");
 		return -3;
 	}
 	ts_info("ISP running successfully");
@@ -611,7 +593,7 @@ static int goodix_update_prepare(struct fw_update_ctrl *fwu_ctrl)
 
 	/*reset IC*/
 	ts_info("firmware update, reset");
-	if (goodix_fw_update_reset(5))
+	if (goodix_fw_update_reset())
 		ts_err("reset abnormal");
 
 	retry = 100;
@@ -639,13 +621,13 @@ static int goodix_update_prepare(struct fw_update_ctrl *fwu_ctrl)
 	ts_info("Success hold CPU");
 
 	/* enable misctl clock */
-	if (fwu_ctrl->core_data->bus->ic_type == IC_TYPE_BERLIN_D)
+	if (fwu_ctrl->core_data->bus->ic_type == CHIP_TYPE_BRD)
 		goodix_reg_write(misctl_reg, (u8 *)&enable_misctl_val, 4);
 	else
 		goodix_reg_write(misctl_reg, (u8 *)&enable_misctl_val, 1);
 	ts_info("enbale misctl clock");
 
-	if (fwu_ctrl->core_data->bus->ic_type == IC_TYPE_BERLIN_A) {
+	if (fwu_ctrl->core_data->bus->ic_type == CHIP_TYPE_BRA) {
 		/* open ESD_KEY */
 		retry = 20;
 		do {
@@ -685,7 +667,7 @@ static int goodix_send_flash_cmd(struct goodix_flash_cmd *flash_cmd)
 {
 	int i, ret, retry;
 	struct goodix_flash_cmd tmp_cmd;
-	u32 flash_cmd_reg = goodix_fw_update_ctrl.update_info->flash_cmd_reg;
+	u32 flash_cmd_reg = goodix_fw_update_ctrl->update_info->flash_cmd_reg;
 
 	ts_info("try send flash cmd:%*ph", (int)sizeof(flash_cmd->buf),
 		flash_cmd->buf);
@@ -762,7 +744,7 @@ static int goodix_flash_package(u8 subsys_type, u8 *pkg,
 {
 	int ret, retry;
 	struct goodix_flash_cmd flash_cmd;
-	u32 isp_buffer_reg = goodix_fw_update_ctrl.update_info->isp_buffer_reg;
+	u32 isp_buffer_reg = goodix_fw_update_ctrl->update_info->isp_buffer_reg;
 
 	retry = 2;
 	do {
@@ -921,8 +903,9 @@ static int goodix_update_finish(struct fw_update_ctrl *fwu_ctrl)
 {
 	int ret;
 
-	if (goodix_fw_update_reset(100))
+	if (goodix_fw_update_reset())
 		ts_err("reset abnormal");
+
 	ret = goodix_fw_version_compare(fwu_ctrl);
 	if (ret == COMPARE_EQUAL || ret == COMPARE_CFG_NOTEQUAL)
 		return 0;
@@ -1006,14 +989,14 @@ static ssize_t goodix_sysfs_update_en_store(
 {
 	int ret = 0;
 	int mode = 0;
-	struct fw_update_ctrl *fw_ctrl = &goodix_fw_update_ctrl;
+
+	if (!goodix_fw_update_ctrl) {
+		ts_err("fw module not initialized");
+		return -EINVAL;
+	}
 
 	if (!buf || count <= 0) {
 		ts_err("invalid params");
-		return -EINVAL;
-	}
-	if (!fw_ctrl || !fw_ctrl->initialized) {
-		ts_err("fw module uninit");
 		return -EINVAL;
 	}
 
@@ -1046,7 +1029,7 @@ static ssize_t goodix_sysfs_fwimage_store(struct file *file,
 		struct kobject *kobj, struct bin_attribute *attr,
 		char *buf, loff_t pos, size_t count)
 {
-	struct firmware **fw = &goodix_fw_update_ctrl.fw_data.fw_sysfs;
+	struct firmware **fw = &goodix_fw_update_ctrl->fw_data.fw_sysfs;
 
 	if (*fw == NULL) {
 		*fw = kzalloc(sizeof(**fw), GFP_KERNEL);
@@ -1073,7 +1056,7 @@ static ssize_t goodix_sysfs_result_show(
 		struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
-	struct fw_update_ctrl *fw_ctrl = &goodix_fw_update_ctrl;
+	struct fw_update_ctrl *fw_ctrl = goodix_fw_update_ctrl;
 	char str[GOODIX_MAX_STR_LABLE_LEN] = {0};
 	int r = -EINVAL;
 
@@ -1118,8 +1101,7 @@ static int goodix_fw_sysfs_init(struct goodix_ts_core *core_data,
 {
 	int ret = 0, i;
 
-	fw_ctrl->kobj = kobject_create_and_add("fwupdate",
-					&core_data->pdev->dev.kobj);
+	fw_ctrl->kobj = kobject_create_and_add("fwupdate", goodix_get_default_kobj());
 	if (!fw_ctrl->kobj) {
 		ts_err("failed create sub dir for fwupdate");
 		return -EINVAL;
@@ -1154,7 +1136,7 @@ static int goodix_fw_sysfs_init(struct goodix_ts_core *core_data,
 
 static void goodix_fw_sysfs_remove(void)
 {
-	struct fw_update_ctrl *fw_ctrl = &goodix_fw_update_ctrl;
+	struct fw_update_ctrl *fw_ctrl = goodix_fw_update_ctrl;
 	int i;
 
 	sysfs_remove_bin_file(fw_ctrl->kobj, &fw_ctrl->attr_fwimage);
@@ -1179,7 +1161,7 @@ static int goodix_request_firmware(struct firmware_data *fw_data,
 {
 	struct fw_update_ctrl *fw_ctrl =
 		container_of(fw_data, struct fw_update_ctrl, fw_data);
-	struct device *dev = &(fw_ctrl->core_data->pdev->dev);
+	struct device *dev = fw_ctrl->core_data->bus->dev;
 	int r;
 	int retry = GOODIX_RETRY_3;
 
@@ -1225,7 +1207,8 @@ static int goodix_fw_update_thread(void *data)
 	mutex_lock(&fwu_ctrl->mutex);
 
 	ts_debug("notify update start");
-	goodix_ts_blocking_notify(NOTIFY_FWUPDATE_START, NULL);
+	goodix_ts_esd_off(fwu_ctrl->core_data);
+	fwu_ctrl->core_data->hw_ops->irq_enable(fwu_ctrl->core_data, false);
 
 	if (fwu_ctrl->mode & UPDATE_MODE_SRC_REQUEST) {
 		ts_info("Firmware request update starts");
@@ -1273,12 +1256,13 @@ out:
 	if (r) {
 		ts_err("fw update failed, %d", r);
 		fwu_ctrl->status = UPSTA_FAILED;
-		goodix_ts_blocking_notify(NOTIFY_FWUPDATE_FAILED, NULL);
 	} else {
 		ts_info("fw update success");
 		fwu_ctrl->status = UPSTA_SUCCESS;
-		goodix_ts_blocking_notify(NOTIFY_FWUPDATE_SUCCESS, NULL);
 	}
+
+	fwu_ctrl->core_data->hw_ops->irq_enable(fwu_ctrl->core_data, true);
+	goodix_ts_esd_on(fwu_ctrl->core_data);
 
 	end = ktime_get();
 	fwu_ctrl->spend_time = ktime_to_ms(ktime_sub(end, start));
@@ -1289,11 +1273,11 @@ out:
 int goodix_do_fw_update(struct goodix_ic_config *ic_config, int mode)
 {
 	struct task_struct *fwu_thrd;
-	struct fw_update_ctrl *fwu_ctrl = &goodix_fw_update_ctrl;
+	struct fw_update_ctrl *fwu_ctrl = goodix_fw_update_ctrl;
 	int ret;
 
-	if (!fwu_ctrl->initialized) {
-		ts_err("fw mode uninit");
+	if (!fwu_ctrl) {
+		ts_err("fw module not initialized");
 		return -EINVAL;
 	}
 
@@ -1326,37 +1310,41 @@ int goodix_fw_update_init(struct goodix_ts_core *core_data)
 		return -ENODEV;
 	}
 
-	mutex_init(&goodix_fw_update_ctrl.mutex);
-	goodix_fw_update_ctrl.core_data = core_data;
-	goodix_fw_update_ctrl.mode = 0;
+	goodix_fw_update_ctrl =
+		kzalloc(sizeof(*goodix_fw_update_ctrl), GFP_KERNEL);
+	if (!goodix_fw_update_ctrl)
+		return -ENOMEM;
 
-	strlcpy(goodix_fw_update_ctrl.fw_name, core_data->board_data.fw_name,
-		sizeof(goodix_fw_update_ctrl.fw_name));
+	mutex_init(&goodix_fw_update_ctrl->mutex);
+	goodix_fw_update_ctrl->core_data = core_data;
+	goodix_fw_update_ctrl->mode = 0;
 
-	ret = goodix_fw_sysfs_init(core_data, &goodix_fw_update_ctrl);
+	strlcpy(goodix_fw_update_ctrl->fw_name, core_data->board_data.fw_name,
+		sizeof(goodix_fw_update_ctrl->fw_name));
+
+	ret = goodix_fw_sysfs_init(core_data, goodix_fw_update_ctrl);
 	if (ret) {
 		ts_err("failed create fwupate sysfs node");
 		return ret;
 	}
-	if (core_data->bus->ic_type == IC_TYPE_BERLIN_A)
-		goodix_fw_update_ctrl.update_info = &update_bra;
-	else if (core_data->bus->ic_type == IC_TYPE_BERLIN_B)
-		goodix_fw_update_ctrl.update_info = &update_brb;
+	if (core_data->bus->ic_type == CHIP_TYPE_BRA)
+		goodix_fw_update_ctrl->update_info = &update_bra;
+	else if (core_data->bus->ic_type == CHIP_TYPE_BRB)
+		goodix_fw_update_ctrl->update_info = &update_brb;
 	else
-		goodix_fw_update_ctrl.update_info = &update_brd;
+		goodix_fw_update_ctrl->update_info = &update_brd;
 
-	goodix_fw_update_ctrl.initialized = 1;
 	return 0;
 }
 
 void goodix_fw_update_uninit(void)
 {
-	if (!goodix_fw_update_ctrl.initialized)
+	if (!goodix_fw_update_ctrl)
 		return;
 
-	mutex_lock(&goodix_fw_update_ctrl.mutex);
+	mutex_lock(&goodix_fw_update_ctrl->mutex);
 	goodix_fw_sysfs_remove();
-	goodix_fw_update_ctrl.initialized = 0;
-	mutex_unlock(&goodix_fw_update_ctrl.mutex);
-	mutex_destroy(&goodix_fw_update_ctrl.mutex);
+	mutex_unlock(&goodix_fw_update_ctrl->mutex);
+	mutex_destroy(&goodix_fw_update_ctrl->mutex);
+	goodix_fw_update_ctrl = NULL;
 }

@@ -302,14 +302,14 @@ err_out:
 	return -EINVAL;
 }
 
-static int goodix_get_config_data(struct goodix_ts_core *cd, u8 sensor_id)
+int goodix_get_config_proc(struct goodix_ts_core *cd, u8 sensor_id)
 {
 	struct goodix_cfg_bin cfg_bin = {0};
 	char *cfg_name = cd->board_data.cfg_bin_name;
 	int ret;
 
 	/*get cfg_bin from file system*/
-	ret = goodix_read_cfg_bin(&cd->pdev->dev, cfg_name, &cfg_bin);
+	ret = goodix_read_cfg_bin(cd->bus->dev, cfg_name, &cfg_bin);
 	if (ret) {
 		ts_err("failed get valid config bin data");
 		return ret;
@@ -334,10 +334,4 @@ err_out:
 	kfree(cfg_bin.bin_data);
 	return ret;
 }
-
-int goodix_get_config_proc(struct goodix_ts_core *cd)
-{
-	return goodix_get_config_data(cd, cd->fw_version.sensor_id);
-}
-
 

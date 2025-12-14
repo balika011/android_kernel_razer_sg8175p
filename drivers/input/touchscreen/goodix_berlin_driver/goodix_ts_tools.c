@@ -71,8 +71,9 @@ struct goodix_tools_dev {
 	struct mutex mutex;
 	atomic_t in_use;
 	struct goodix_ext_module module;
-} *goodix_tools_dev;
+};
 
+static struct goodix_tools_dev *goodix_tools_dev;
 
 /* read data asynchronous,
  * success return data length, otherwise return < 0
@@ -298,12 +299,12 @@ static long goodix_tools_ioctl(struct file *filp, unsigned int cmd,
 		break;
 	case GTP_ESD_ENABLE:
 		if (arg == 0)
-			goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+			goodix_ts_esd_off(ts_core);
 		else
-			goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
+			goodix_ts_esd_on(ts_core);
 		break;
 	case GTP_DEV_RESET:
-		hw_ops->reset(ts_core, GOODIX_NORMAL_RESET_DELAY_MS);
+		hw_ops->reset(ts_core);
 		break;
 	case GTP_SEND_COMMAND:
 		/* deprecated command */
@@ -389,13 +390,13 @@ static int goodix_tools_open(struct inode *inode, struct file *filp)
 
 	ts_info("try open tool");
 	/* Only the first time open device need to register module */
-	ret = goodix_register_ext_module_no_wait(&goodix_tools_dev->module);
+	ret = goodix_register_ext_module(&goodix_tools_dev->module);
 	if (ret) {
 		ts_info("failed register to core module");
 		return -EFAULT;
 	}
 	ts_info("success open tools");
-	goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+	goodix_ts_esd_off(goodix_tools_dev->ts_core);
 	filp->private_data = goodix_tools_dev;
 	atomic_set(&goodix_tools_dev->in_use, 1);
 	return 0;
@@ -408,7 +409,7 @@ static int goodix_tools_release(struct inode *inode, struct file *filp)
 	/* when the last close this dev node unregister the module */
 	goodix_tools_dev->ts_core->tools_ctrl_sync = false;
 	atomic_set(&goodix_tools_dev->in_use, 0);
-	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
+	goodix_ts_esd_on(goodix_tools_dev->ts_core);
 	ret = goodix_unregister_ext_module(&goodix_tools_dev->module);
 	return ret;
 }
@@ -468,11 +469,9 @@ int goodix_tools_init(void)
 {
 	int ret;
 
-	goodix_tools_dev = kzalloc(sizeof(struct goodix_tools_dev), GFP_KERNEL);
-	if (goodix_tools_dev == NULL) {
-		ts_err("Memory allco err");
+	goodix_tools_dev = kzalloc(sizeof(*goodix_tools_dev), GFP_KERNEL);
+	if (!goodix_tools_dev)
 		return -ENOMEM;
-	}
 
 	INIT_LIST_HEAD(&goodix_tools_dev->head);
 	goodix_tools_dev->ops_mode = 0;

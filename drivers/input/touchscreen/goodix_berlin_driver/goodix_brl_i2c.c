@@ -17,6 +17,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/i2c.h>
+#include <linux/of_device.h>
 
 #include "goodix_ts_core.h"
 
@@ -25,7 +26,6 @@
 #define GOODIX_BUS_RETRY_TIMES		2
 #define GOODIX_REG_ADDR_SIZE		4
 
-static struct platform_device *goodix_pdev;
 struct goodix_bus_interface goodix_i2c_bus;
 
 static int goodix_i2c_read(struct device *dev, unsigned int reg,
@@ -155,12 +155,6 @@ write_exit:
 	return r;
 }
 
-static void goodix_pdev_release(struct device *dev)
-{
-	ts_info("goodix pdev released");
-	kfree(goodix_pdev);
-}
-
 static int goodix_i2c_probe(struct i2c_client *client,
 	const struct i2c_device_id *dev_id)
 {
@@ -171,61 +165,25 @@ static int goodix_i2c_probe(struct i2c_client *client,
 	if (!ret)
 		return -EIO;
 
-	/* get ic type */
-	ret = goodix_get_ic_type(client->dev.of_node);
-	if (ret < 0)
-		return ret;
-
-	goodix_i2c_bus.ic_type = ret;
+	goodix_i2c_bus.ic_type = (int) (u64) of_device_get_match_data(&client->dev);
 	goodix_i2c_bus.bus_type = GOODIX_BUS_TYPE_I2C;
 	goodix_i2c_bus.dev = &client->dev;
 	goodix_i2c_bus.read = goodix_i2c_read;
 	goodix_i2c_bus.write = goodix_i2c_write;
-	/* ts core device */
-	goodix_pdev = kzalloc(sizeof(struct platform_device), GFP_KERNEL);
-	if (!goodix_pdev)
-		return -ENOMEM;
 
-	goodix_pdev->name = GOODIX_CORE_DRIVER_NAME;
-	goodix_pdev->id = 0;
-	goodix_pdev->num_resources = 0;
-	/*
-	 * you can find this platform dev in
-	 * /sys/devices/platform/goodix_ts.0
-	 * goodix_pdev->dev.parent = &client->dev;
-	 */
-	goodix_pdev->dev.platform_data = &goodix_i2c_bus;
-	goodix_pdev->dev.release = goodix_pdev_release;
-
-	/* register platform device, then the goodix_ts_core
-	 * module will probe the touch device.
-	 */
-	ret = platform_device_register(goodix_pdev);
-	if (ret) {
-		ts_err("failed register goodix platform device, %d", ret);
-		goto err_pdev;
-	}
-	ts_info("i2c probe out");
-	return ret;
-
-err_pdev:
-	kfree(goodix_pdev);
-	goodix_pdev = NULL;
-	ts_info("i2c probe out, %d", ret);
-	return ret;
+	return goodix_ts_probe(&client->dev, &goodix_i2c_bus);
 }
 
 static int goodix_i2c_remove(struct i2c_client *client)
 {
-	platform_device_unregister(goodix_pdev);
-	return 0;
+	return goodix_ts_remove(&client->dev);
 }
 
 #ifdef CONFIG_OF
 static const struct of_device_id i2c_matchs[] = {
-	{.compatible = "goodix,gt9897",},
-	{.compatible = "goodix,gt9966",},
-	{.compatible = "goodix,gt9916",},
+	{.compatible = "goodix,gt9897", .data = (void *) CHIP_TYPE_BRA},
+	{.compatible = "goodix,gt9966", .data = (void *) CHIP_TYPE_BRB},
+	{.compatible = "goodix,gt9916", .data = (void *) CHIP_TYPE_BRD},
 	{},
 };
 MODULE_DEVICE_TABLE(of, i2c_matchs);
@@ -237,25 +195,42 @@ static const struct i2c_device_id i2c_id_table[] = {
 };
 MODULE_DEVICE_TABLE(i2c, i2c_id_table);
 
+#if IS_ENABLED(CONFIG_PM)
+static const struct dev_pm_ops goodix_i2c_dev_pm_ops = {
+	.suspend = goodix_ts_pm_suspend,
+	.resume = goodix_ts_pm_resume,
+};
+#endif
+
 static struct i2c_driver goodix_i2c_driver = {
 	.driver = {
 		.name = TS_DRIVER_NAME,
-		//.owner = THIS_MODULE,
+		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(i2c_matchs),
+#if IS_ENABLED(CONFIG_PM)
+		.pm = &goodix_i2c_dev_pm_ops,
+#endif
 	},
+	.id_table = i2c_id_table,
 	.probe = goodix_i2c_probe,
 	.remove = goodix_i2c_remove,
-	.id_table = i2c_id_table,
 };
 
-int goodix_i2c_bus_init(void)
+static int __init goodix_i2c_bus_init(void)
 {
 	ts_info("Goodix i2c driver init");
 	return i2c_add_driver(&goodix_i2c_driver);
 }
 
-void goodix_i2c_bus_exit(void)
+static void __exit goodix_i2c_bus_exit(void)
 {
 	ts_info("Goodix i2c driver exit");
 	i2c_del_driver(&goodix_i2c_driver);
 }
+
+late_initcall(goodix_i2c_bus_init);
+module_exit(goodix_i2c_bus_exit);
+
+MODULE_DESCRIPTION("Goodix Touchscreen Core Module");
+MODULE_AUTHOR("Goodix, Inc.");
+MODULE_LICENSE("GPL v2");

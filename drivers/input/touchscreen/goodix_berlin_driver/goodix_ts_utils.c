@@ -148,32 +148,3 @@ void goodix_rotate_abcd2cbad(int tx, int rx, s16 *data)
 	memcpy(data, temp_buf, size * sizeof(s16));
 	kfree(temp_buf);
 }
-
-/* get ic type */
-int goodix_get_ic_type(struct device_node *node)
-{
-	const char *name_tmp;
-	int ret;
-
-	ret = of_property_read_string(node, "compatible", &name_tmp);
-	if (ret < 0) {
-		ts_err("get compatible failed");
-		return ret;
-	}
-
-	if (strstr(name_tmp, "9897")) {
-		ts_info("ic type is BerlinA");
-		ret = IC_TYPE_BERLIN_A;
-	} else if (strstr(name_tmp, "9966") || strstr(name_tmp, "7986")) {
-		ts_info("ic type is BerlinB");
-		ret = IC_TYPE_BERLIN_B;
-	} else if (strstr(name_tmp, "9916")) {
-		ts_info("ic type is BerlinD");
-		ret = IC_TYPE_BERLIN_D;
-	} else {
-		ts_info("can't find valid ic_type");
-		ret = -EINVAL;
-	}
-
-	return ret;
-}

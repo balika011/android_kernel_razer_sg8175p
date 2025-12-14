@@ -28,7 +28,7 @@
 #define NOISEDATA_TEST_TIMES				1  /* noise test frames */
 
 #define GOODIX_RESULT_SAVE_PATH				"/vendor/etc/Test_Data.csv"
-#define GOODIX_TEST_FILE_NAME				"goodix"
+#define GOODIX_TEST_FILE_NAME				"goodix_test_limits.csv"
 #define MAX_DATA_BUFFER						28000
 #define MAX_SHORT_NUM						15
 #define MAX_LINE_LEN                		(1024 * 3 * 7)
@@ -107,6 +107,11 @@
 #define SEN_SEN_SELFCODE_REG_BRD 			0x137E6
 #define DRV_SEN_SELFCODE_REG_BRD			0x14556
 #define DIFF_CODE_DATA_REG_BRD				0x14D00
+
+#define SHORT_TEST_RUN_REG			0x10400
+#define SHORT_TEST_RUN_FLAG			0xAA
+#define INSPECT_FW_SWITCH_CMD		0x85
+#define TEST_FW_PID  				"OST"
 
 
 #define ABS(val)			((val < 0)? -(val) : val)
@@ -317,9 +322,9 @@ struct goodix_ts_test {
 
 static int cal_cha_to_cha_res(struct goodix_ts_test *ts_test, int v1, int v2)
 {
-	if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_A)
+	if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRA)
 		return (v1 - v2) * 63 / v2;
-	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_B)
+	else if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRB)
 		return (v1 - v2) * 74 / v2 + 20;
 	else
 		return (v1 / v2 - 1) * 70 + 59;
@@ -327,9 +332,9 @@ static int cal_cha_to_cha_res(struct goodix_ts_test *ts_test, int v1, int v2)
 
 static int cal_cha_to_avdd_res(struct goodix_ts_test *ts_test, int v1, int v2)
 {
-	if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_A)
+	if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRA)
 		return 64 * (2 * v2 - 25) * 40 / v1 - 40;
-	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_B)
+	else if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRB)
 		return 64 * (2 * v2 - 25) * 99 / v1 - 60;
 	else
 		return 64 * (2 * v2 - 25) * 93 / v1 - 20;
@@ -337,9 +342,9 @@ static int cal_cha_to_avdd_res(struct goodix_ts_test *ts_test, int v1, int v2)
 
 static int cal_cha_to_gnd_res(struct goodix_ts_test *ts_test, int v)
 {
-	if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_A)
+	if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRA)
 		return 64148 / v - 40;
-	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_B)
+	else if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRB)
 		return 150500 / v - 60;
 	else
 		return 145000 / v - 15;
@@ -347,7 +352,7 @@ static int cal_cha_to_gnd_res(struct goodix_ts_test *ts_test, int v)
 
 static int ts_test_reset(struct goodix_ts_test *ts_test, u32 delay_ms)
 {
-	return ts_test->ts->hw_ops->reset(ts_test->ts, delay_ms);
+	return ts_test->ts->hw_ops->reset(ts_test->ts);
 }
 
 static int ts_test_read(struct goodix_ts_test *ts_test,
@@ -388,12 +393,6 @@ static int ts_test_send_config(struct goodix_ts_test *ts_test, int type)
 	}
 
 	return ts_test->ts->hw_ops->send_config(ts_test->ts, cfg->data, cfg->len);
-}
-
-static int ts_test_read_version(struct goodix_ts_test *ts_test,
-	struct goodix_fw_version *version)
-{
-	return ts_test->ts->hw_ops->read_version(ts_test->ts, version);
 }
 
 static void goto_next_line(char **ptr)
@@ -550,9 +549,9 @@ static void goodix_init_params(struct goodix_ts_test *ts_test)
 	test_params->drv_num = ts->ic_info.parm.drv_num;
 	test_params->sen_num = ts->ic_info.parm.sen_num;
 
-	if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_A)
+	if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRA)
 		test_params->params_info = &params_bra;
-	else if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_B)
+	else if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRB)
 		test_params->params_info = &params_brb;
 	else
 		test_params->params_info = &params_brd;
@@ -567,18 +566,13 @@ static int goodix_init_testlimits(struct goodix_ts_test *ts_test)
 	struct ts_test_params *test_params = &ts_test->test_params;
 	struct goodix_ts_core *ts_core = ts_test->ts;
 	const struct firmware *firmware = NULL;
-	struct device *dev = &ts_core->pdev->dev;
-	char limit_file[100] = {0};
+	struct device *dev = ts_core->bus->dev;
 	u32 tx = test_params->drv_num;
 	u32 rx = test_params->sen_num;
 
-	scnprintf(limit_file, ARRAY_SIZE(limit_file), "%s_test_limits_%d.csv",
-			GOODIX_TEST_FILE_NAME, ts_core->fw_version.sensor_id);
-	ts_info("limit_file_name:%s", limit_file);
-
-	ret = request_firmware(&firmware, limit_file, dev);
+	ret = request_firmware(&firmware, GOODIX_TEST_FILE_NAME, dev);
 	if (ret < 0) {
-		ts_err("limits file [%s] not available", limit_file);
+		ts_err("limits file [%s] not available", GOODIX_TEST_FILE_NAME);
 		return -EINVAL;
 	}
 	if (!firmware) {
@@ -723,7 +717,7 @@ static int goodix_tptest_prepare(struct goodix_ts_test *ts_test)
 	/* disable irq */
 	ts_test_irq_enable(ts_test, false);
 	/* close esd */
-	goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+	goodix_ts_esd_off(ts_test->ts);
 
 	/* send test config if exist */
 	if (cfg->len > 0) {
@@ -731,7 +725,7 @@ static int goodix_tptest_prepare(struct goodix_ts_test *ts_test)
 		ret = ts_test->ts->hw_ops->send_config(ts_test->ts, cfg->data, cfg->len);
 		if (ret < 0) {
 			ts_err("Send test config failed, exit");
-			goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
+			goodix_ts_esd_on(ts_test->ts);
 			ts_test_irq_enable(ts_test, true);
 			return ret;
 		}
@@ -752,15 +746,11 @@ static void goodix_tptest_finish(struct goodix_ts_test *ts_test)
 	}
 
 	/* open esd */
-	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
+	goodix_ts_esd_on(ts_test->ts);
 	/* enable irq */
 	ts_test_irq_enable(ts_test, true);
 }
 
-#define SHORT_TEST_RUN_REG			0x10400
-#define SHORT_TEST_RUN_FLAG			0xAA
-#define INSPECT_FW_SWITCH_CMD		0x85
-#define TEST_FW_PID  				"OST"
 static int goodix_short_test_prepare(struct goodix_ts_test *ts_test)
 {
 	struct goodix_ts_cmd tmp_cmd;
@@ -785,8 +775,8 @@ resend_cmd:
 	retry = 3;
 	while (retry--) {
 		msleep(40);
-		if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_A) {
-			ret = ts_test_read_version(ts_test, &fw_ver);
+		if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRA) {
+			ts_test->ts->hw_ops->read_version(ts_test->ts, &fw_ver);
 			if (ret < 0) {
 				ts_err("read test version failed");
 				return ret;
@@ -1325,7 +1315,7 @@ static void goodix_shortcircut_test(struct goodix_ts_test *ts_test)
 		ts_err("Failed to get test_time, default %dms", DEFAULT_TEST_TIME_MS);
 		test_time = DEFAULT_TEST_TIME_MS;
 	} else {
-		if (ic_type == IC_TYPE_BERLIN_A)
+		if (ic_type == CHIP_TYPE_BRA)
 			test_time /= 10;
 		if (test_time > MAX_TEST_TIME_MS) {
 			ts_info("test time too long %d > %d",
@@ -1336,7 +1326,7 @@ static void goodix_shortcircut_test(struct goodix_ts_test *ts_test)
 	}
 
 	/* start short test */
-	if (ic_type == IC_TYPE_BERLIN_A) {
+	if (ic_type == CHIP_TYPE_BRA) {
 		test_parm_cmd.len = 0x0A;
 		test_parm_cmd.cmd = INSPECT_PARAM_CMD;
 		test_parm_cmd.data[0] =
@@ -1416,7 +1406,7 @@ static int goodix_cap_test_prepare(struct goodix_ts_test *ts_test)
 		ts_test->test_result[GTP_SELFNOISE_TEST] = SYS_SOFTWARE_REASON;
 
 	/* switch rawdata mode */
-	if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_D) {
+	if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRD) {
 		temp_cmd.cmd = 0x90;
 		temp_cmd.data[0] = 0x81;
 		temp_cmd.len = 5;
@@ -1455,7 +1445,7 @@ static int goodix_cache_rawdata(struct goodix_ts_test *ts_test)
 	u32 data_addr = ts_test->test_params.rawdata_addr;
 	u32 flag_addr = ts_test->ts->ic_info.misc.touch_data_addr;
 
-	if (ts_test->ts->bus->ic_type == IC_TYPE_BERLIN_D)
+	if (ts_test->ts->bus->ic_type == CHIP_TYPE_BRD)
 		flag_addr = ts_test->ts->ic_info.misc.frame_data_addr;
 
 	for (i = 0; i < TOTAL_FRAME_NUM; i++) {
@@ -1477,7 +1467,7 @@ static int goodix_cache_rawdata(struct goodix_ts_test *ts_test)
 			return -EAGAIN;
 		}
 
-		if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+		if (cd->bus->ic_type == CHIP_TYPE_BRD) {
 			ret = ts_test_read(ts_test, flag_addr, frame_buf, sizeof(frame_buf));
 			if (ret < 0)
 				return ret;
@@ -1573,7 +1563,7 @@ static int goodix_cache_self_rawdata(struct goodix_ts_test *ts_test)
 	unsigned char frame_buf[GOODIX_MAX_FRAMEDATA_LEN];
 	unsigned char *cur_ptr;
 
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+	if (cd->bus->ic_type == CHIP_TYPE_BRD) {
 		ret = ts_test_read(ts_test, flag_addr, frame_buf, sizeof(frame_buf));
 		if (ret < 0)
 			return ret;
@@ -1625,7 +1615,7 @@ static int goodix_cache_noisedata(struct goodix_ts_test *ts_test)
 	u32 data_addr = ts_test->test_params.noisedata_addr;
 	u32 flag_addr = ts_test->ts->ic_info.misc.touch_data_addr;
 
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+	if (cd->bus->ic_type == CHIP_TYPE_BRD) {
 		flag_addr = ts_test->ts->ic_info.misc.frame_data_addr;
 		temp_cmd.cmd = 0x90;
 		temp_cmd.data[0] = 0x82;
@@ -1656,7 +1646,7 @@ static int goodix_cache_noisedata(struct goodix_ts_test *ts_test)
 			return -EAGAIN;
 		}
 
-		if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+		if (cd->bus->ic_type == CHIP_TYPE_BRD) {
 			ret = ts_test_read(ts_test, flag_addr, frame_buf, sizeof(frame_buf));
 			if (ret < 0)
 				return ret;
@@ -1709,7 +1699,7 @@ static int goodix_cache_self_noisedata(struct goodix_ts_test *ts_test)
 	unsigned char frame_buf[GOODIX_MAX_FRAMEDATA_LEN];
 	unsigned char *cur_ptr;
 
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+	if (cd->bus->ic_type == CHIP_TYPE_BRD) {
 		ret = ts_test_read(ts_test, flag_addr, frame_buf, sizeof(frame_buf));
 		if (ret < 0)
 			return ret;
@@ -2022,714 +2012,6 @@ static void goodix_data_statistics(s16 *data, size_t data_size,
 	return;
 }
 
-#ifdef SAVE_IN_CSV
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
-static ssize_t fs_write(const void* buf, size_t size, struct file* fp)
-{
-	loff_t pos;
-	ssize_t len;
-
-	pos = fp->f_pos;
-	len = kernel_write(fp, buf, size, &pos);
-	fp->f_pos = pos;
-
-	return len;
-}
-#else
-static ssize_t fs_write(const void* buf, size_t size, struct file* fp)
-{
-	mm_segment_t old_fs;
-	loff_t pos;
-	ssize_t len;
-
-	pos = fp->f_pos;
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	len = vfs_write(fp, buf, size, &pos);
-	set_fs(old_fs);
-	fp->f_pos = pos;
-
-	return len;
-}
-#endif
-
-static int goodix_save_test_config(struct goodix_ts_test *ts_test,
-		struct file *fp)
-{
-	int ret = 0;
-	int i;
-	int bytes = 0;
-	char *data;
-	struct goodix_ic_config *cfg = &ts_test->test_config;
-
-	if (cfg->len <= 0) {
-		ts_info("Can't find vaild test config");
-		return 0;
-	}
-
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
-	if (!data) {
-		ts_err("alloc memory failed");
-		return -ENOMEM;
-	}
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<OrderConfig>\n");
-	for (i = 0; i < cfg->len; i++)
-		bytes += scnprintf(&data[bytes],
-				MAX_DATA_BUFFER - bytes, "0x%02x,", cfg->data[i]);
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</OrderConfig>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0) {
-		ts_err("test config write failed");
-		goto save_end;
-	}
-
-save_end:
-	kfree(data);
-	return ret;
-}
-
-static int goodix_save_header(struct goodix_ts_test *ts_test,
-		struct file *fp)
-{
-	int ret;
-	int i;
-	int bytes = 0;
-	bool result = false;
-	char *data = NULL;
-	struct goodix_ts_core *ts = ts_test->ts;
-
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
-	if (!data) {
-		ts_err("alloc memory failed");
-		return -ENOMEM;
-	}
-
-	bytes += scnprintf(&data[bytes],
-				MAX_DATA_BUFFER - bytes,
-				"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<TESTLOG>\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<Header>\n");
-	/* sava test result */
-	for (i = 0; i < MAX_TEST_ITEMS; i++) {
-		if ((ts_test->test_result[i] > 0) &&
-			(ts_test->test_result[i] != GTP_TEST_PASS)) {
-				result = true;
-				break;
-		}
-	}
-	if (result)
-		bytes += scnprintf(&data[bytes],
-				MAX_DATA_BUFFER - bytes,
-				"<Result>NG</Result>\n");
-	else
-		bytes += scnprintf(&data[bytes],
-				MAX_DATA_BUFFER - bytes,
-				"<Result>OK</Result>\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<DeviceType>GT%s</DeviceType>\n",
-				ts->fw_version.patch_pid);
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<SensorId>%d</SensorId>\n",
-				ts_test->ts->fw_version.sensor_id);
-
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0) {
-		ts_err("header write failed");
-		goto save_end;
-	}
-	bytes = 0;
-	/* save test config */
-	ret = goodix_save_test_config(ts_test, fp);
-	if (ret < 0)  {
-		ts_err("save test config failed");
-		goto save_end;
-	}
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Header>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0) {
-		ts_err("header write failed");
-		goto save_end;
-	}
-	bytes = 0;
-
-	/* item list */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<ItemList>\n");
-	if (ts_test->test_result[GTP_CAP_TEST]) {
-		if (GTP_TEST_PASS == ts_test->test_result[GTP_CAP_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"<Item name=\"Rawdata MAX/MIN Test\" result=\"OK\"/>\n");
-		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"<Item name=\"Rawdata MAX/MIN Test\" result=\"NG\"/>\n");
-	}
-
-	if (ts_test->test_result[GTP_DELTA_TEST]) {
-		if (GTP_TEST_PASS == ts_test->test_result[GTP_DELTA_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Rawdata Adjcent Deviation Test\" result=\"OK\"/>\n");
-		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Rawdata Adjcent Deviation Test\" result=\"NG\"/>\n");
-	}
-
-	if (ts_test->test_result[GTP_NOISE_TEST]) {
-		if (GTP_TEST_PASS == ts_test->test_result[GTP_NOISE_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"<Item name=\"Diffdata Jitter Test\" result=\"OK\"/>\n");
-		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"<Item name=\"Diffdata Jitter Test\" result=\"NG\"/>\n");
-	}
-
-	if (ts_test->test_result[GTP_SELFNOISE_TEST]) {
-		if (GTP_TEST_PASS == ts_test->test_result[GTP_SELFNOISE_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Self Diffdata Jitter Limit Test\" result=\"OK\"/>\n");
-		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Self Diffdata Jitter Limit Test\" result=\"NG\"/>\n");
-	}
-
-	if (ts_test->test_result[GTP_SELFCAP_TEST]) {
-		if (GTP_TEST_PASS == ts_test->test_result[GTP_SELFCAP_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Self Rawdata Upper Limit Test\" result=\"OK\"/>\n");
-		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			      "<Item name=\"Self Rawdata Upper Limit Test\" result=\"NG\"/>\n");
-	}
-
-	if (ts_test->test_result[GTP_SHORT_TEST]) {
-		if (GTP_TEST_PASS == ts_test->test_result[GTP_SHORT_TEST])
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"<Item name=\"Short Test\" result=\"OK\"/>\n");
-		else
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"<Item name=\"Short Test\" result=\"NG\"/>\n");
-	}
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</ItemList>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0) {
-		ts_err("item list write failed");
-		goto save_end;
-	}
-
-save_end:
-	kfree(data);
-	return ret;
-}
-
-static int goodix_save_limits(struct goodix_ts_test *ts_test,
-		struct file *fp)
-{
-	int ret;
-	int i;
-	int bytes = 0;
-	char *data = NULL;
-	int tx = ts_test->test_params.drv_num;
-	int rx = ts_test->test_params.sen_num;
-	int chn1;
-	int chn2;
-	int r;
-
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
-	if (!data) {
-		return -ENOMEM;
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<TestItems>\n");
-
-	/* save short result */
-	if (ts_test->test_result[GTP_SHORT_TEST]) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<Item name=\"Short Test\">\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<ShortNum>%d</ShortNum>\n",
-				ts_test->short_res.short_num);
-		for (i = 0; i < ts_test->short_res.short_num; i++) {
-			chn1 = ts_test->short_res.short_msg[4 * i];
-			chn2 = ts_test->short_res.short_msg[4 * i + 1];
-			r = (ts_test->short_res.short_msg[4 * i + 2] << 8) +
-				ts_test->short_res.short_msg[4 * i + 3];
-			if (chn1 == CHN_VDD)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"<ShortMess Chn1=\"VDD\" ");
-			else if (chn1 == CHN_GND)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"<ShortMess Chn1=\"GND\" ");
-			else if (chn1 & DRV_CHANNEL_FLAG)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"<ShortMess Chn1=\"Tx%d\" ",
-						chn1 & 0x7f);
-			else
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"<ShortMess Chn1=\"Rx%d\" ",
-						chn1 & 0x7f);
-			if (chn2 == CHN_VDD)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"Chn2=\"VDD\" ShortResistor= \"%dKom\"/>\n", r);
-			else if (chn2 == CHN_GND)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"Chn2=\"GND\" ShortResistor= \"%dKom\"/>\n", r);
-			else if (chn2 & DRV_CHANNEL_FLAG)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"Chn2=\"Tx%d\" ShortResistor= \"%dKom\"/>\n",
-						chn2 & 0x7f, r);
-			else
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-						"Chn2=\"Rx%d\" ShortResistor= \"%dKom\"/>\n",
-						chn2 & 0x7f, r);
-		}
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Item>\n");
-		ret = fs_write(data, bytes, fp);
-		if (ret < 0) {
-			ts_err("short res write fail.");
-			goto save_end;
-		}
-		bytes = 0;
-	}
-
-	/* rawdata max limit */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<Item name=\"Rawdata Test Sets\">\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<TotalFrameCnt>%d</TotalFrameCnt>\n", TOTAL_FRAME_NUM);
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<MaxRawLimit>\n");
-	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
-			ts_test->test_params.max_limits[i]);
-		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</MaxRawLimit>\n");
-	/* BeyondRawdataUpperLimit */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<BeyondRawdataUpperLimitCnt>\n");
-	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
-				ts_test->open_res.beyond_max_limit_cnt[i]);
-		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"</BeyondRawdataUpperLimitCnt>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0) {
-		ts_err("rawdata limit write failed");
-		goto save_end;
-	}
-	bytes = 0;
-
-	/* rawdata min limit */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<MinRawLimit>\n");
-	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
-			ts_test->test_params.min_limits[i]);
-		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</MinRawLimit>\n");
-	/* BeyondRawdataLower limit */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<BeyondRawdataLowerLimitCnt>\n");
-	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
-				ts_test->open_res.beyond_min_limit_cnt[i]);
-		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"</BeyondRawdataLowerLimitCnt>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0) {
-		ts_err("rawdata limit write failed");
-		goto save_end;
-	}
-	bytes = 0;
-
-	/* Max Accord limit */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<MaxAccordLimit>\n");
-	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
-			ts_test->test_params.deviation_limits[i]);
-		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</MaxAccordLimit>\n");
-	/* BeyondAccordLimitCnt */
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<BeyondAccordLimitCnt>\n");
-	for (i = 0; i < tx * rx; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
-			ts_test->open_res.beyond_accord_limit_cnt[i]);
-		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	}
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</BeyondAccordLimitCnt>\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Item>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0) {
-		ts_err("rawdata limit write failed");
-		goto save_end;
-	}
-	bytes = 0;
-
-	/* save noise limit */
-	if (ts_test->test_result[GTP_NOISE_TEST]) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<Item name=\"Diffdata Test Sets\">\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<TotalFrameCnt>%d</TotalFrameCnt>\n",
-				NOISEDATA_TEST_TIMES);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<MaxJitterLimit>%d</MaxJitterLimit>\n",
-				ts_test->test_params.noise_threshold);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Item>\n");
-		ret = fs_write(data, bytes, fp);
-		if (ret < 0) {
-			ts_err("noise limit write failed");
-			goto save_end;
-		}
-		bytes = 0;
-	}
-
-	/* save self rawdata limit */
-	if (ts_test->test_result[GTP_SELFCAP_TEST]) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<Item name=\"Self Rawdata Test Sets\">\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<TotalFrameCnt>1</TotalFrameCnt>\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<MaxRawLimit>\n");
-		for (i = 0; i < tx + rx; i++) {
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
-					ts_test->test_params.self_max_limits[i]);
-			if ((i + 1) % tx == 0)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-		}
-		if ((tx + rx) % tx != 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</MaxRawLimit>\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<MinRawLimit>\n");
-		for (i = 0; i < tx + rx; i++) {
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,",
-					ts_test->test_params.self_min_limits[i]);
-			if ((i + 1) % tx == 0)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-		}
-		if ((tx + rx) % tx != 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</MinRawLimit>\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Item>\n");
-		ret = fs_write(data, bytes, fp);
-		if (ret < 0) {
-			ts_err("self rawdata limit write failed");
-			goto save_end;
-		}
-		bytes = 0;
-	}
-
-	/* save selfnoise limit */
-	if (ts_test->test_result[GTP_SELFNOISE_TEST]) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<Item name=\"Self Diffdata Test Sets\">\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<TotalFrameCnt>1</TotalFrameCnt>\n");
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-				"<MaxJitterLimit>%d</MaxJitterLimit>\n",
-				ts_test->test_params.self_noise_threshold);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</Item>\n");
-		ret = fs_write(data, bytes, fp);
-		if (ret < 0) {
-			ts_err("raw limit write failed");
-			goto save_end;
-		}
-		bytes = 0;
-	}
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</TestItems>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0)
-		ts_err("limit write fail.");
-
-save_end:
-	kfree(data);
-	return ret;
-}
-
-static int goodix_save_rawdata(struct goodix_ts_test *ts_test,
-		struct file *fp)
-{
-	int i;
-	int j;
-	int ret;
-	int bytes = 0;
-	s16 stat_result[3];
-	char *data = NULL;
-	int tx = ts_test->test_params.drv_num;
-	int rx = ts_test->test_params.sen_num;
-	int len = tx * rx;
-
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<RawDataRecord>\n");
-	for (i = 0; i < TOTAL_FRAME_NUM; i++) {
-		goodix_data_cal(ts_test->rawdata[i].data, len, stat_result);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<DataContent No.=\"%d\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
-			i, len, stat_result[1], stat_result[2], stat_result[0]);
-		for (j = 0; j < len; j++) {
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"%d,", ts_test->rawdata[i].data[j]);
-			if ((j + 1) % tx == 0)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-		}
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</DataContent>\n");
-		goodix_data_cal(ts_test->accord_arr[i].data, len, stat_result);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<RawAccord No.=\"%d\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
-			i, len, stat_result[1], stat_result[2], stat_result[0]);
-		for (j = 0; j < len; j++) {
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"%d,", ts_test->accord_arr[i].data[j]);
-			if ((j + 1) % tx == 0)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-		}
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</RawAccord>\n");
-		ret = fs_write(data, bytes, fp);
-		if (ret < 0) {
-			ts_err("rawdata write fail.");
-			goto save_end;
-		}
-		bytes = 0;
-	}
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</RawDataRecord>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0)
-		ts_err("rawdata write fail.");
-
-save_end:
-	kfree(data);
-	return ret;
-}
-
-static int goodix_save_noise_data(struct goodix_ts_test *ts_test,
-		struct file *fp)
-{
-	int i;
-	int j;
-	int ret = 0;
-	int bytes = 0;
-	s16 stat_result[3];
-	char *data = NULL;
-	int tx = ts_test->test_params.drv_num;
-	int rx = ts_test->test_params.sen_num;
-	int len = tx * rx;
-
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<DiffDataRecord>\n");
-	for (i = 0; i < NOISEDATA_TEST_TIMES; i++) {
-		goodix_data_cal(ts_test->noisedata[i].data, len, stat_result);
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-			"<DataContent No.=\"%d\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
-			i, len, stat_result[1], stat_result[2], stat_result[0]);
-		for (j = 0; j < len; j++) {
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-					"%d,", ts_test->noisedata[i].data[j]);
-			if ((j + 1) % tx == 0)
-				bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-		}
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</DataContent>\n");
-		ret = fs_write(data, bytes, fp);
-		if (ret < 0) {
-			ts_err("noisedata write fail.");
-			goto save_end;
-		}
-		bytes = 0;
-	}
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</DiffDataRecord>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0)
-		ts_err("noisedata write fail.");
-
-save_end:
-	kfree(data);
-	return ret;
-}
-
-static int goodix_save_self_data(struct goodix_ts_test *ts_test,
-		struct file *fp, s16 *src_data, u8 *title, int len)
-{
-	int i;
-	int ret = 0;
-	s32 bytes = 0;
-	char *data;
-	s16 stat_result[3];
-	int tx = ts_test->test_params.drv_num;
-
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<%s>\n", title);
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0) {
-		ts_err("rawdata write fail.");
-		goto save_end;
-	}
-	bytes = 0;
-
-	goodix_data_cal(src_data, len, stat_result);
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes,
-		"<DataContent No.=\"0\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
-		len, stat_result[1], stat_result[2], stat_result[0]);
-	for (i = 0; i < len; i++) {
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "%d,", src_data[i]);
-		if ((i + 1) % tx == 0)
-			bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	}
-	if (len % tx != 0)
-		bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</DataContent>\n");
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</%s>\n", title);
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0)
-		ts_err("rawdata write fail.");
-
-save_end:
-	kfree(data);
-	return ret;
-}
-
-static int goodix_save_data(struct goodix_ts_test *ts_test,
-		struct file *fp)
-{
-	int ret;
-	int bytes = 0;
-	char *data = NULL;
-
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "<DataRecord>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0) {
-		ts_err("rawdata record lable failed");
-		goto save_end;
-	}
-	bytes = 0;
-
-	ret = goodix_save_rawdata(ts_test, fp);
-	if (ret < 0)
-		goto save_end;
-
-	if (ts_test->test_result[GTP_NOISE_TEST]) {
-		ret = goodix_save_noise_data(ts_test, fp);
-		if (ret < 0)
-			goto save_end;
-	}
-
-	if (ts_test->test_result[GTP_SELFCAP_TEST]) {
-		ret = goodix_save_self_data(ts_test, fp,
-				ts_test->self_rawdata.data,
-				"selfDataRecord",
-				ts_test->self_rawdata.size);
-		if (ret < 0)
-			goto save_end;
-	}
-
-	if (ts_test->test_result[GTP_SELFNOISE_TEST]) {
-		ret = goodix_save_self_data(ts_test, fp,
-				ts_test->self_noisedata.data,
-				"selfDiffDataRecord",
-				ts_test->self_noisedata.size);
-		if (ret < 0)
-			goto save_end;
-	}
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER - bytes, "</DataRecord>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0)
-		ts_err("rawdata data record lable fail.");
-
-save_end:
-	kfree(data);
-	return ret;
-}
-
-/* save end tag in csv file */
-static int goodix_save_tail(struct goodix_ts_test *ts_test,
-		struct file *fp)
-{
-	int ret = 0;
-	int bytes = 0;
-	char *data = NULL;
-
-	data = kzalloc(MAX_DATA_BUFFER, GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
-
-	bytes += scnprintf(&data[bytes], MAX_DATA_BUFFER, "</TESTLOG>\n");
-	ret = fs_write(data, bytes, fp);
-	if (ret < 0)
-		ts_err("tail write failed");
-
-	kfree(data);
-	return ret;
-}
-
-static void goodix_save_result_data(struct goodix_ts_test *ts_test)
-{
-	int ret = 0;
-	char save_path[100];
-	struct file *fp = NULL;
-
-	/* format result file */
-	scnprintf(save_path, ARRAY_SIZE(save_path), GOODIX_RESULT_SAVE_PATH);
-	ts_info("save result IN, file_name:%s", save_path);
-
-	fp = filp_open(save_path, O_CREAT | O_WRONLY | O_TRUNC, 0666);
-	if (IS_ERR(fp)) {
-		ts_err("create file:%s failed, fp:%ld", save_path, PTR_ERR(fp));
-		return;
-	}
-
-	/* save header */
-	ret = goodix_save_header(ts_test, fp);
-	if (ret < 0)
-		goto save_end;
-
-	/* save limits */
-	ret = goodix_save_limits(ts_test, fp);
-	if (ret < 0)
-		goto save_end;
-
-	/* save data */
-	ret = goodix_save_data(ts_test, fp);
-	if (ret < 0)
-		goto save_end;
-
-	/* save tail */
-	ret = goodix_save_tail(ts_test, fp);
-	if (ret < 0)
-		goto save_end;
-
-	ts_info("the test result save in %s", save_path);
-save_end:
-	filp_close(fp, NULL);
-}
-#endif // SAVE_IN_CSV
-
 static void goodix_put_test_result(struct goodix_ts_test *ts_test,
 		struct ts_rawdata_info *info)
 {
@@ -2737,7 +2019,6 @@ static void goodix_put_test_result(struct goodix_ts_test *ts_test,
 	bool have_bus_error = false;
 	bool have_panel_error = false;
 	char statistics_data[STATISTICS_DATA_LEN] = {0};
-	struct goodix_ts_core *ts = ts_test->ts;
 
 	ts_info("put test result IN");
 
@@ -2872,18 +2153,9 @@ static void goodix_put_test_result(struct goodix_ts_test *ts_test,
 		}
 	}
 
-	goodix_strncat(ts_test->test_info, "-GT",
-		TS_RAWDATA_RESULT_MAX);
-	goodix_strncat(ts_test->test_info, ts->fw_version.patch_pid,
-		TS_RAWDATA_RESULT_MAX);
 	goodix_strncat(ts_test->test_info, "\n",
 		TS_RAWDATA_RESULT_MAX);
 	strlcpy(info->result, ts_test->test_info, TS_RAWDATA_RESULT_MAX - 1);
-
-#ifdef SAVE_IN_CSV
-	/* save result to file */
-	goodix_save_result_data(ts_test);
-#endif
 }
 
 static int goodix_do_inspect(struct goodix_ts_core *cd, struct ts_rawdata_info *info)
