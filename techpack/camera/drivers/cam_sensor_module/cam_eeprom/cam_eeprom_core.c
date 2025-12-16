@@ -28,17 +28,14 @@ static int cam_eeprom_read_memory(struct cam_eeprom_ctrl_t *e_ctrl,
 	struct cam_eeprom_memory_block_t *block)
 {
 	int                                rc = 0;
-	int                                j;
 #ifdef CONFIG_MACH_RAZER_NICOLE
-	int                                index;
+	int                                i;
 #endif
+	int                                j;
 	struct cam_sensor_i2c_reg_setting  i2c_reg_settings = {0};
 	struct cam_sensor_i2c_reg_array    i2c_reg_array = {0};
 	struct cam_eeprom_memory_map_t    *emap = block->map;
 	struct cam_eeprom_soc_private     *eb_info = NULL;
-#ifdef CONFIG_MACH_RAZER_NICOLE
-	struct cam_eeprom_soc_private     *soc_private;
-#endif
 	uint8_t                           *memptr = block->mapdata;
 
 	if (!e_ctrl) {
@@ -47,10 +44,6 @@ static int cam_eeprom_read_memory(struct cam_eeprom_ctrl_t *e_ctrl,
 	}
 
 	eb_info = (struct cam_eeprom_soc_private *)e_ctrl->soc_info.soc_private;
-#ifdef CONFIG_MACH_RAZER_NICOLE
-	soc_private =
-		(struct cam_eeprom_soc_private *)e_ctrl->soc_info.soc_private;
-#endif
 
 	for (j = 0; j < block->num_map; j++) {
 		CAM_DBG(CAM_EEPROM, "slave-addr = 0x%X", emap[j].saddr);
@@ -117,12 +110,8 @@ static int cam_eeprom_read_memory(struct cam_eeprom_ctrl_t *e_ctrl,
 #ifdef CONFIG_MACH_RAZER_NICOLE
 			/* hi556 otp needs to read a fixed addr 0108 many times,
 			   use i2c write addr to distinguish */
-			if (soc_private->i2c_info.slave_addr == 0x40) {
-				CAM_DBG(CAM_EEPROM,
-						"hi556 otp valid_size is %d",
-						emap[j].mem.valid_size);
-				for (index = 0; index < emap[j].mem.valid_size;
-						index++, memptr++) {
+			if (eb_info->i2c_info.slave_addr == 0x40) {
+				for (i = 0; i < emap[j].mem.valid_size; i++) {
 					rc = camera_io_dev_read_seq(
 						&e_ctrl->io_master_info,
 						emap[j].mem.addr, memptr,
@@ -134,22 +123,10 @@ static int cam_eeprom_read_memory(struct cam_eeprom_ctrl_t *e_ctrl,
 							rc);
 						return rc;
 					}
+					memptr += 1;
 				}
 			} else {
-				rc = camera_io_dev_read_seq(
-					&e_ctrl->io_master_info,
-					emap[j].mem.addr, memptr,
-					emap[j].mem.addr_type,
-					emap[j].mem.data_type,
-					emap[j].mem.valid_size);
-				if (rc < 0) {
-					CAM_ERR(CAM_EEPROM, "read failed rc %d",
-						rc);
-					return rc;
-				}
-				memptr += emap[j].mem.valid_size;
-			}
-#else
+#endif
 			rc = camera_io_dev_read_seq(&e_ctrl->io_master_info,
 				emap[j].mem.addr, memptr,
 				emap[j].mem.addr_type,
@@ -161,6 +138,8 @@ static int cam_eeprom_read_memory(struct cam_eeprom_ctrl_t *e_ctrl,
 				return rc;
 			}
 			memptr += emap[j].mem.valid_size;
+#ifdef CONFIG_MACH_RAZER_NICOLE
+			}
 #endif
 		}
 
