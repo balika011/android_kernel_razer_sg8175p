@@ -47,10 +47,6 @@
 #define BC_WLS_FW_GET_VERSION		0x44
 #define BC_SHUTDOWN_NOTIFY		0x47
 #define BC_GENERIC_NOTIFY		0x80
-#ifdef CONFIG_MACH_RAZER_NICOLE
-#define USB_POWER_SUPPLY_SET_SINK	0x90
-#define USB_POWER_SUPPLY_SET_SOURCE	0x91
-#endif
 
 /* Generic definitions */
 #define MAX_STR_LEN			128
