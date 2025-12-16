@@ -22,16 +22,11 @@
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
 
-#ifndef _HQ_5G_CTRL_H
-#define _HQ_5G_CTRL_H
-
 struct quectel_module_ctrl_platform_data {
 	int full_card_power_off_gpio;
 	int module_reset_gpio;
 	const char *name;
-	struct regulator *vreg;
 };
-#endif
 
 struct quectel_module_ctrl_drvdata {
 	const struct quectel_module_ctrl_platform_data *pdata;
@@ -155,7 +150,7 @@ static struct attribute_group quectel_module_ctrl_attr_group = {
 	.attrs = quectel_module_ctrl_attrs,
 };
 
-static int hq_gpio_configure(struct quectel_module_ctrl_drvdata *data, bool on)
+static int quectel_module_ctrl_gpio_configure(struct quectel_module_ctrl_drvdata *data, bool on)
 {
 	int err = 0;
 
@@ -286,25 +281,12 @@ static int quectel_module_ctrl_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, ddata);
 
-	/*
-	pdata->vreg = devm_regulator_get(dev, "vreg");
-	if (IS_ERR(pdata->vreg)) {
-		error = PTR_ERR(pdata->vreg);
-		dev_err(dev, "couldn't get vcca_reg regulator, ret:%d\n", error);
-		pdata->vreg = NULL;
+	error = quectel_module_ctrl_gpio_configure(ddata, 1);
+	if (error) {
+		dev_err(dev, "gpio configure failed\n",
+			error);
 		return error;
 	}
-
-	error = regulator_enable(pdata->vreg);
-	if (error < 0) {
-		dev_err(dev, "vcca_reg regulator failed, ret:%d\n", error);
-		//regulator_set_voltage(pdata->vcca_reg, 0, VCCA_MAX_UV);
-		//regulator_set_load(pdata->vcca_reg, 0);
-		return -EINVAL;
-	}
-	*/
-
-	error = hq_gpio_configure(ddata, 1);
 
 	error = sysfs_create_group(&pdev->dev.kobj, &quectel_module_ctrl_attr_group);
 	if (error) {
@@ -312,8 +294,6 @@ static int quectel_module_ctrl_probe(struct platform_device *pdev)
 			error);
 		return error;
 	}
-
-	//device_init_wakeup(&pdev->dev, wakeup);
 
 	pr_info("%s success\n", __func__);
 	return 0;
@@ -335,35 +315,14 @@ static int quectel_module_ctrl_remove(struct platform_device *pdev)
 
 	sysfs_remove_group(&pdev->dev.kobj, &quectel_module_ctrl_attr_group);
 
-	//device_init_wakeup(&pdev->dev, 0);
-
 	return 0;
 }
-
-#ifdef CONFIG_PM_SLEEP
-static int quectel_module_ctrl_suspend(struct device *dev)
-{
-	//struct quectel_module_ctrl_drvdata *ddata = dev_get_drvdata(dev);
-
-	return 0;
-}
-
-static int quectel_module_ctrl_resume(struct device *dev)
-{
-	//struct quectel_module_ctrl_drvdata *ddata = dev_get_drvdata(dev);
-
-	return 0;
-}
-#endif
-
-static SIMPLE_DEV_PM_OPS(quectel_module_ctrl_pm_ops, quectel_module_ctrl_suspend, quectel_module_ctrl_resume);
 
 static struct platform_driver quectel_module_ctrl_device_driver = {
 	.probe		= quectel_module_ctrl_probe,
 	.remove		= quectel_module_ctrl_remove,
 	.driver		= {
 		.name	= "quectel-module-ctrl",
-		.pm	= &quectel_module_ctrl_pm_ops,
 		.of_match_table = of_match_ptr(quectel_module_ctrl_of_match),
 	}
 };
