@@ -476,13 +476,6 @@
 };
 
 &soc {
-	quectel,5g-module-ctrl {
-		compatible = "quectel-module-ctrl";
-		label = "quectel-5g-module-ctrl";
-		full-card-power-off-gpio = <&tlmm 49 0x0>;
-		module-reset-gpio = <&tlmm 116 0x0>;
-	};
-
 	i2c@0 {
 		compatible = "i2c-gpio";
 		reg = <0x0>;
