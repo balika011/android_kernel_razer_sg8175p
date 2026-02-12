@@ -32,8 +32,8 @@
 				0 0 0 3 &intc GIC_SPI 532 IRQ_TYPE_LEVEL_HIGH
 				0 0 0 4 &intc GIC_SPI 533 IRQ_TYPE_LEVEL_HIGH>;
 
-		perst-gpio = <&tlmm 143 0>;
-		wake-gpio = <&tlmm 145 0>;
+		perst-gpio = <&tlmm 143 GPIO_ACTIVE_LOW>;
+		wake-gpio = <&tlmm 145 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&pcie2a_perst_default
 				&pcie2a_clkreq_default
@@ -249,8 +249,8 @@
 				0 0 0 3 &intc GIC_SPI 435 IRQ_TYPE_LEVEL_HIGH
 				0 0 0 4 &intc GIC_SPI 438 IRQ_TYPE_LEVEL_HIGH>;
 
-		perst-gpio = <&tlmm 147 0>;
-		wake-gpio = <&tlmm 146 0>;
+		perst-gpio = <&tlmm 147 GPIO_ACTIVE_LOW>;
+		wake-gpio = <&tlmm 146 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&pcie2b_perst_default
 				&pcie2b_clkreq_default
@@ -466,8 +466,8 @@
 				0 0 0 3 &intc GIC_SPI 543 IRQ_TYPE_LEVEL_HIGH
 				0 0 0 4 &intc GIC_SPI 544 IRQ_TYPE_LEVEL_HIGH>;
 
-		perst-gpio = <&tlmm 151 0>;
-		wake-gpio = <&tlmm 56 0>;
+		perst-gpio = <&tlmm 151 GPIO_ACTIVE_LOW>;
+		wake-gpio = <&tlmm 56 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&pcie3a_perst_default
 				&pcie3a_clkreq_default
@@ -682,8 +682,8 @@
 				0 0 0 3 &intc GIC_SPI 528 IRQ_TYPE_LEVEL_HIGH
 				0 0 0 4 &intc GIC_SPI 529 IRQ_TYPE_LEVEL_HIGH>;
 
-		perst-gpio = <&tlmm 153 0>;
-		wake-gpio = <&tlmm 130 0>;
+		perst-gpio = <&tlmm 153 GPIO_ACTIVE_LOW>;
+		wake-gpio = <&tlmm 130 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&pcie3b_perst_default
 				&pcie3b_clkreq_default
@@ -903,8 +903,8 @@
 		qcom,target-link-speed = <0x3>;
 		qcom,core-preset = <0x77777777>;
 
-		perst-gpio = <&tlmm 141 0>;
-		wake-gpio = <&tlmm 139 0>;
+		perst-gpio = <&tlmm 141 GPIO_ACTIVE_LOW>;
+		wake-gpio = <&tlmm 139 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&pcie4_perst_default
 				&pcie4_clkreq_default

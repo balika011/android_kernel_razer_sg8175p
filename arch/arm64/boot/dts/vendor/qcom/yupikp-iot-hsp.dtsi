@@ -12,7 +12,7 @@
 &pcie1 {
 	status = "ok";
 	qcom,boot-option = <0x0>;
-	qcom,ep-gpio = <&tlmm 19 0>;
+	qcom,ep-gpio = <&tlmm 19 GPIO_ACTIVE_HIGH>;
 	pinctrl-0 = <&pcie1_perst_default
 			&pcie1_clkreq_default
 			&pcie1_wake_default

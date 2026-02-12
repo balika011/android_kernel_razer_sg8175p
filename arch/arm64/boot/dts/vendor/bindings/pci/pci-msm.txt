@@ -489,9 +489,9 @@ Example
 				0 0 0 4 &intc 0 152 0>;
 		msi-parent = <&pcie0_msi>;
 
-		perst-gpio = <&tlmm 35 0>;
-		wake-gpio = <&tlmm 37 0>;
-		qcom,ep-gpio = <&tlmm 94 0>;
+		perst-gpio = <&tlmm 35 GPIO_ACTIVE_LOW>;
+		wake-gpio = <&tlmm 37 GPIO_ACTIVE_LOW>;
+		qcom,ep-gpio = <&tlmm 94 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&pcie0_clkreq_default
 				&pcie0_perst_default

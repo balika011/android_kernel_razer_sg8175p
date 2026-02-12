@@ -4146,11 +4146,13 @@ static int msm_pcie_get_gpio(struct msm_pcie_dev_t *pcie_dev)
 	pcie_dev->gpio_n = 0;
 	for (i = 0; i < MSM_PCIE_MAX_GPIO; i++) {
 		struct msm_pcie_gpio_info_t *gpio_info = &pcie_dev->gpio[i];
+		enum of_gpio_flags gpio_flags;
 
-		ret = of_get_named_gpio(pcie_dev->pdev->dev.of_node,
-					gpio_info->name, 0);
+		ret = of_get_named_gpio_flags(pcie_dev->pdev->dev.of_node,
+					      gpio_info->name, 0, &gpio_flags);
 		if (ret >= 0) {
 			gpio_info->num = ret;
+			gpio_info->on = !(gpio_flags & OF_GPIO_ACTIVE_LOW);
 			pcie_dev->gpio_n++;
 			PCIE_DBG(pcie_dev, "GPIO num for %s is %d\n",
 				gpio_info->name, gpio_info->num);

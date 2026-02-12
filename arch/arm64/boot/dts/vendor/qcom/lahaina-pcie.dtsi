@@ -35,8 +35,8 @@
 
 		msi-parent = <&pcie0_msi>;
 
-		perst-gpio = <&tlmm 94 0>;
-		wake-gpio = <&tlmm 96 0>;
+		perst-gpio = <&tlmm 94 GPIO_ACTIVE_LOW>;
+		wake-gpio = <&tlmm 96 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&pcie0_perst_default
 				&pcie0_clkreq_default
@@ -280,8 +280,8 @@
 				0 0 0 4 &intc GIC_SPI 439 IRQ_TYPE_LEVEL_HIGH>;
 		msi-parent = <&pcie1_msi>;
 
-		perst-gpio = <&tlmm 97 0>;
-		wake-gpio = <&tlmm 99 0>;
+		perst-gpio = <&tlmm 97 GPIO_ACTIVE_LOW>;
+		wake-gpio = <&tlmm 99 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&pcie1_perst_default
 				&pcie1_clkreq_default

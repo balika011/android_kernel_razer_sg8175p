@@ -110,8 +110,8 @@
 			&pcie0_perst_default
 			&pcie0_wake_default>;
 
-		perst-gpio = <&tlmm 101 0>;
-		wake-gpio = <&tlmm 100 0>;
+		perst-gpio = <&tlmm 101 GPIO_ACTIVE_LOW>;
+		wake-gpio = <&tlmm 100 GPIO_ACTIVE_LOW>;
 
 		gdsc-vdd-supply = <&pcie_0_gdsc>;
 		vreg-1p8-supply = <&L12A>;

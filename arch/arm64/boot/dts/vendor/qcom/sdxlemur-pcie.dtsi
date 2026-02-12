@@ -34,8 +34,8 @@
 
 		msi-parent = <&pcie0_msi>;
 
-		perst-gpio = <&tlmm 57 0>;
-		wake-gpio = <&tlmm 53 0>;
+		perst-gpio = <&tlmm 57 GPIO_ACTIVE_LOW>;
+		wake-gpio = <&tlmm 53 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&pcie0_clkreq_default
 			&pcie0_perst_default
