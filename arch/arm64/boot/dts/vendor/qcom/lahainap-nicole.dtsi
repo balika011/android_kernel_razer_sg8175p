@@ -1,6 +1,7 @@
 #include <dt-bindings/clock/qcom,gcc-lahaina.h>
 #include <dt-bindings/phy/qcom,usb3-5nm-qmp-combo.h>
 #include "lahaina-qrd-common.dtsi"
+#include "camera/lahaina-camera-sensor-nicole.dtsi"
 
 &bluetooth {
 	pinctrl-1 = <&wcnss_en_sleep>;
