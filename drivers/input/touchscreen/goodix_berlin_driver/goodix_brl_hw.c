@@ -266,18 +266,18 @@ static int goodix_brl_power(struct goodix_ts_core *cd, bool on)
 	int reset_gpio = cd->board_data.reset_gpio;
 
 	if (on) {
-		if (cd->iovdd) {
-			ret = regulator_enable(cd->iovdd);
+		if (cd->vcc_i2c) {
+			ret = regulator_enable(cd->vcc_i2c);
 			if (ret < 0) {
-				ts_err("Failed to enable iovdd:%d", ret);
+				ts_err("Failed to enable vcc_i2c:%d", ret);
 				goto power_off;
 			}
 		}
 		usleep_range(3000, 3100);
-		if (cd->avdd) {
-			ret = regulator_enable(cd->avdd);
+		if (cd->vdd) {
+			ret = regulator_enable(cd->vdd);
 			if (ret < 0) {
-				ts_err("Failed to enable avdd:%d", ret);
+				ts_err("Failed to enable vdd:%d", ret);
 				goto power_off;
 			}
 		}
@@ -301,10 +301,10 @@ static int goodix_brl_power(struct goodix_ts_core *cd, bool on)
 
 power_off:
 	gpio_direction_output(reset_gpio, 0);
-	if (cd->iovdd)
-		regulator_disable(cd->iovdd);
-	if (cd->avdd)
-		regulator_disable(cd->avdd);
+	if (cd->vcc_i2c)
+		regulator_disable(cd->vcc_i2c);
+	if (cd->vdd)
+		regulator_disable(cd->vdd);
 
 	return ret;
 }

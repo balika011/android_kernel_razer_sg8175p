@@ -455,8 +455,8 @@ struct goodix_ts_core {
 
 	/* every pointer of this array represent a kind of config */
 	struct goodix_ic_config *ic_configs[GOODIX_MAX_CONFIG_GROUP];
-	struct regulator *avdd;
-	struct regulator *iovdd;
+	struct regulator *vdd;
+	struct regulator *vcc_i2c;
 #ifdef CONFIG_TOUCHSCREEN_GOODIX_BRL_GESTURE
 	unsigned char gesture_type;
 #endif

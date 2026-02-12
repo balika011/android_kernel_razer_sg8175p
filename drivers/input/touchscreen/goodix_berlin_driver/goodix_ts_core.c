@@ -1118,19 +1118,19 @@ static int goodix_ts_power_init(struct goodix_ts_core *core_data)
 	struct device *dev = core_data->bus->dev;
 	int ret = 0;
 
-	core_data->avdd = devm_regulator_get(dev, "avdd");
-	if (IS_ERR_OR_NULL(core_data->avdd)) {
-		ret = PTR_ERR(core_data->avdd);
-		ts_err("Failed to get regulator avdd:%d", ret);
-		core_data->avdd = NULL;
+	core_data->vdd = devm_regulator_get(dev, "vdd");
+	if (IS_ERR_OR_NULL(core_data->vdd)) {
+		ret = PTR_ERR(core_data->vdd);
+		ts_err("Failed to get regulator vdd:%d", ret);
+		core_data->vdd = NULL;
 		return ret;
 	}
 
-	core_data->iovdd = devm_regulator_get(dev, "iovdd");
-	if (IS_ERR_OR_NULL(core_data->iovdd)) {
-		ret = PTR_ERR(core_data->iovdd);
-		ts_err("Failed to get regulator iovdd:%d", ret);
-		core_data->iovdd = NULL;
+	core_data->vcc_i2c = devm_regulator_get(dev, "vcc_i2c");
+	if (IS_ERR_OR_NULL(core_data->vcc_i2c)) {
+		ret = PTR_ERR(core_data->vcc_i2c);
+		ts_err("Failed to get regulator vcc_i2c:%d", ret);
+		core_data->vcc_i2c = NULL;
 	}
 
 	return ret;
