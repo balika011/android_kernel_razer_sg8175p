@@ -519,6 +519,15 @@
 		pinctrl-0 = <&usb0_vbus_boost_default>;
 	};
 
+	pcie1_reg: pcie1_reg {
+		compatible = "regulator-fixed";
+		regulator-name = "pcie1_reg";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		enable-active-high;
+		gpio = <&tlmm 49 GPIO_ACTIVE_HIGH>;
+	};
+
 	thundersoft_straps {
 		compatible = "thundersoft,straps";
 		sku-gpios = <&tlmm 3 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>,
@@ -1114,4 +1123,6 @@
 &pcie1 {
 	qcom,link-check-max-count = <50>;
 	qcom,boot-option = <0x0>;
+	vreg-3p3-supply = <&pcie1_reg>;
+	qcom,ep-gpio = <&tlmm 116 GPIO_ACTIVE_LOW>;
 };
