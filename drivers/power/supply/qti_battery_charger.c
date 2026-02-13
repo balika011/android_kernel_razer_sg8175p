@@ -20,6 +20,9 @@
 #include <linux/power_supply.h>
 #include <linux/soc/qcom/pmic_glink.h>
 #include <linux/soc/qcom/battery_charger.h>
+#ifdef CONFIG_MACH_RAZER_NICOLE
+#include <linux/regulator/driver.h>
+#endif
 #include "qti_typec_class.h"
 
 #define MSG_OWNER_BC			32778
@@ -43,6 +46,10 @@
 #define BC_WLS_FW_GET_VERSION		0x44
 #define BC_SHUTDOWN_NOTIFY		0x47
 #define BC_GENERIC_NOTIFY		0x80
+#ifdef CONFIG_MACH_RAZER_NICOLE
+#define BC_VBUS_OUT_DISABLE	0x90
+#define BC_VBUS_OUT_ENABLE	0x91
+#endif
 
 /* Generic definitions */
 #define MAX_STR_LEN			128
@@ -257,6 +264,9 @@ struct battery_chg_dev {
 	bool				restrict_chg_en;
 	/* To track the driver initialization status */
 	bool				initialized;
+#ifdef CONFIG_MACH_RAZER_NICOLE
+	struct regulator	*vbus_reg;
+#endif
 };
 
 static const int battery_prop_map[BATT_PROP_MAX] = {
@@ -760,6 +770,9 @@ static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 {
 	struct battery_charger_notify_msg *notify_msg = data;
 	struct psy_state *pst = NULL;
+#ifdef CONFIG_MACH_RAZER_NICOLE
+	int ret;
+#endif
 
 	if (len != sizeof(*notify_msg)) {
 		pr_err("Incorrect response length %zu\n", len);
@@ -780,6 +793,19 @@ static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 	case BC_WLS_STATUS_GET:
 		pst = &bcdev->psy_list[PSY_TYPE_WLS];
 		break;
+#ifdef CONFIG_MACH_RAZER_NICOLE
+	case BC_VBUS_OUT_DISABLE:
+		if (!IS_ERR_OR_NULL(bcdev->vbus_reg))
+			regulator_disable(bcdev->vbus_reg);
+		break;
+	case BC_VBUS_OUT_ENABLE:
+		if (!IS_ERR_OR_NULL(bcdev->vbus_reg)) {
+			ret = regulator_enable(bcdev->vbus_reg);
+			if (ret)
+				pr_err("unable to enable vbus\n");
+		}
+		break;
+#endif
 	default:
 		break;
 	}
@@ -2040,6 +2066,16 @@ static int battery_chg_probe(struct platform_device *pdev)
 	bcdev = devm_kzalloc(&pdev->dev, sizeof(*bcdev), GFP_KERNEL);
 	if (!bcdev)
 		return -ENOMEM;
+
+#ifdef CONFIG_MACH_RAZER_NICOLE
+	bcdev->vbus_reg = devm_regulator_get_optional(dev, "vbus");
+	if (IS_ERR(bcdev->vbus_reg) &&
+	    PTR_ERR(bcdev->vbus_reg) == -EPROBE_DEFER) {
+		/* regulators may not be ready, so retry again later */
+		bcdev->vbus_reg = NULL;
+		return -EPROBE_DEFER;
+	}
+#endif
 
 	bcdev->psy_list[PSY_TYPE_BATTERY].map = battery_prop_map;
 	bcdev->psy_list[PSY_TYPE_BATTERY].prop_count = BATT_PROP_MAX;
